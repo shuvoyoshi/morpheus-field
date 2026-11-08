@@ -1,0 +1,36 @@
+{
+  "m": {
+    "class_type": "Qwen3Loader",
+    "inputs": {
+      "repo_id": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+      "source": "HuggingFace",
+      "precision": "bf16",
+      "attention": "auto"
+    }
+  },
+  "t": {
+    "class_type": "Qwen3VoiceDesign",
+    "inputs": {
+      "model": [
+        "m",
+        0
+      ],
+      "text": "Asta la vista, friend. See you on the other side.",
+      "instruct": "A warm, weathered voice, dry and unhurried, like a western hero shrugging off a long ride.",
+      "language": "Auto",
+      "seed": 42
+    }
+  },
+  "save": {
+    "class_type": "SaveAudioAdvanced",
+    "inputs": {
+      "audio": [
+        "t",
+        0
+      ],
+      "filename_prefix": "Morpheus_audio",
+      "format": "mp3",
+      "format.quality": "320k"
+    }
+  }
+}

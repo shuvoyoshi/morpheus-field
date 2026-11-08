@@ -7,7 +7,7 @@
  *
  * Clip effects show a before / after split: the source clip on the left half,
  * the effect on the right, so the card reads at thumbnail size. Still effects
- * show the result alone. Reads the take through the running OpenField server
+ * show the result alone. Reads the take through the running Morpheus server
  * (OPENFIELD_PORT, default 3161).
  */
 import { execFileSync } from 'child_process';

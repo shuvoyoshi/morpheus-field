@@ -112,8 +112,7 @@ async function switchTo(before: string, file: string): Promise<string[]> {
   log.length = 0;
   const queued = await unloadOnModelSwitch(graph(file), fast);
   log.push('submit');
-  queued?.();
-  await new Promise((r) => setTimeout(r, 100));
+  await queued?.(); // settle the background watcher before reading the log
   return log.filter((l) => l !== 'GET /system_stats');
 }
 

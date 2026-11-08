@@ -193,7 +193,7 @@ export function buildReshootGraph(p: ReshootParams): Record<string, unknown> {
     crop: { class_type: 'LTXVCropGuides', inputs: { positive: ['gSrc', 0], negative: ['gSrc', 1], latent: ['split', 0] } },
     decode: { class_type: 'VAEDecode', inputs: { samples: ['crop', 2], vae: ['vvae', 0] } },
     video: { class_type: 'CreateVideo', inputs: { images: ['decode', 0], fps: FPS } },
-    save: { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: p.filenamePrefix ?? 'openfield/reshoot', format: 'auto', codec: 'auto' } },
+    save: { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: p.filenamePrefix ?? 'morpheus/reshoot', format: 'auto', codec: 'auto' } },
   };
 
   if (p.withAudio) {
@@ -212,7 +212,7 @@ export function buildReshootWarpPreviewGraph(
   p: Omit<ReshootParams, 'prompt' | 'seed' | 'withAudio' | 'loraStrength'>
 ): Record<string, unknown> {
   const { g } = warpNodes(p);
-  const prefix = p.filenamePrefix ?? 'openfield/reshoot-warp';
+  const prefix = p.filenamePrefix ?? 'morpheus/reshoot-warp';
   return {
     ...g,
     video: { class_type: 'CreateVideo', inputs: { images: ['warp', 0], fps: FPS } },

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "morpheus": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "C:\\Program Files\\nodejs\\node.exe",
+        "C:\\Users\\Synthios\\Documents\\GitHub\\morpheus-field\\node_modules\\tsx\\dist\\cli.mjs",
+        "C:\\Users\\Synthios\\Documents\\GitHub\\morpheus-field\\mcp\\server.ts"
+      ],
+      "environment": {
+        "OPENFIELD_URL": "http://127.0.0.1:3161",
+        "FFMPEG_BIN": "C:\\ComfyUI\\ComfyUI-Easy-Install\\ComfyUI-Easy-Install\\ffmpeg.exe",
+        "FFPROBE_BIN": "C:\\ComfyUI\\ComfyUI-Easy-Install\\ComfyUI-Easy-Install\\ffprobe.exe"
+      }
+    }
+  }
+}

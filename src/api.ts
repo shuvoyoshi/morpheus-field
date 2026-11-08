@@ -16,6 +16,10 @@ export interface Take {
   transcript: string | null;
   starred: number;
   error: string | null;
+  /** The take this one was made from (edit, upscale, mirror, ...), when any. */
+  parent_take_id?: number | null;
+  /** Set while the take sits in the trash (its files are stashed, not deleted). */
+  trashed_at?: string | null;
 }
 
 export interface Project { id: number; name: string; folder: string }
@@ -39,12 +43,22 @@ export interface BundleStatus {
   label: string;
   purpose: string;
   license: string;
-  licenseWarning?: string;
   optional: boolean;
   gb: number;
   ready: boolean;
   missingFiles: ModelFileRef[];
   missingNodes: { class: string; pack: string; url: string }[];
+}
+
+/** The Setup > Engine choice: LAN or WAN, and (in LAN mode) which card. */
+export type EngineMode = 'lan' | 'wan';
+export type EngineGpu = '4090' | '5090' | 'both';
+export interface EngineState {
+  mode: EngineMode;
+  gpu: EngineGpu;
+  source: 'user' | 'default';
+  /** A COMFY_LAUNCH_WAN (listen bat) is configured, so WAN can do anything. */
+  wanConfigured: boolean;
 }
 
 export interface Status {
@@ -59,6 +73,8 @@ export interface Status {
   otherGpuProcess?: boolean;
   /** Whether a COMFY_LAUNCH command is configured, i.e. START ENGINE can work. */
   canLaunch?: boolean;
+  /** The saved LAN/WAN + card choice (Setup > Engine). */
+  engine?: EngineState;
   comfyUrl?: string;
   /** The machine-wide video render size and where it came from. */
   renderTier?: TierState;
@@ -91,6 +107,24 @@ export interface PhoneEvent {
   reason?: 'received' | 'expired' | 'cancelled' | 'abuse' | 'replaced';
 }
 
+/** A phone pairing (server/phoneApp.ts). Scanning `url` opens the app and sets the cookie. */
+export interface PairSession {
+  id: string;
+  url: string;
+  expiresAt: number;
+  port: number;
+  upstream: string;
+  network: { wsl: 'none' | 'mirrored' | 'nat'; bindHost: string; urlHost: string; warning: string | null; commands: string[] };
+}
+
+/** Live pairing state, relayed over /live. */
+export interface PairEvent {
+  type: 'phoneapp';
+  id: string;
+  state: 'waiting' | 'linked' | 'closed';
+  reason?: 'expired' | 'cancelled' | 'abuse' | 'replaced';
+}
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   // Only claim a JSON body when one exists — Fastify 400s an empty body sent
   // with a JSON content-type, which silently broke every body-less POST
@@ -104,17 +138,94 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
     window.location.assign('/login');
     throw new Error('Sign in again');
   }
-  const d = await r.json();
+  // An empty body means the server (or its proxy) died mid-response — parse
+  // defensively instead of throwing "Unexpected end of JSON input", which said
+  // nothing about what was actually wrong (2026-11-07: dead API behind Vite).
+  let d: unknown;
+  try { d = await r.json(); } catch { d = null; }
   if (!r.ok) {
-    const msg = (d && (d.error || d.message)) || `${r.status}`;
-    console.error(`[openfield] ${init?.method || 'GET'} ${url} failed:`, msg);
+    const o = d && typeof d === 'object' ? (d as { error?: unknown; message?: unknown }) : null;
+    const msg = (o && (typeof o.error === 'string' ? o.error : typeof o.message === 'string' ? o.message : null))
+      || `Morpheus is not answering (HTTP ${r.status})`;
+    console.error(`[morpheus] ${init?.method || 'GET'} ${url} failed:`, msg);
     throw new Error(msg);
   }
   return d as T;
 }
 
+/** Where a config field came from: saved in the app, from .env, or unset. */
+export type LlmSource = 'user' | 'env' | 'unset';
+
+/** The in-app agent's LLM config (server/llmConfig.ts). `ready` = a URL is set (saved or via .env). */
+export interface AgentConfig {
+  ready: boolean;
+  url: string | null;
+  model: string | null;
+  keySet: boolean;
+  reasoning: string | null;
+  note: string | null;
+  sources: { url: LlmSource; model: LlmSource; key: LlmSource; reasoning: LlmSource };
+}
+
+/** A model the agent's LLM server offers, with stats when the server provides them. */
+export interface LlmModel {
+  id: string;
+  name?: string;
+  size?: string;
+  contextLength?: number;
+  quantization?: string;
+}
+
+export interface AgentStep { id: string; label: string; tool?: string; why?: string }
+
+/** A saved Agent conversation (server/jobs.ts `conversations`). The list is light (no blocks). */
+export interface Convo { id: number; title: string; created_at: string; updated_at: string }
+export interface ConvoFull extends Convo { settings: Record<string, unknown>; blocks: unknown[] }
+/** Prior turns, text only (user + assistant), so the agent can chain on what it made. */
+export interface HistoryMsg { role: 'user' | 'assistant'; content: string }
+/** An agent turn's streamed events (server/agent.ts), in order. */
+export type AgentEvent =
+  | { type: 'plan'; steps: AgentStep[] }
+  | { type: 'thinking'; text: string }
+  | { type: 'text'; text: string }
+  | { type: 'tool_call'; id: string; name: string; args: Record<string, unknown> }
+  | { type: 'tool_done'; id: string; name: string; ok: boolean; summary: string }
+  | { type: 'take'; id: number }
+  | { type: 'show'; ids: number[]; flow: boolean }
+  | { type: 'loading'; text: string; ready?: boolean }
+  | { type: 'error'; message: string }
+  | { type: 'stopped' }
+  | { type: 'done'; stepsUsed: number; elapsedMs: number };
+
 export const api = {
   status: () => j<Status>('/api/status'),
+  /** The agent's LLM wiring (no network): is a model configured, and which. */
+  agentConfig: () => j<AgentConfig>('/api/agent/config'),
+  /** Save the agent's LLM wiring; null clears a field back to .env (or unset). Applies immediately. */
+  setAgentConfig: (patch: Partial<Record<'url' | 'model' | 'key' | 'reasoning', string | null>>) =>
+    j<AgentConfig>('/api/agent/config', { method: 'PUT', body: JSON.stringify(patch) }),
+  /** The models the agent's LLM server offers, with stats on LM Studio. `url`/`key` load a not-yet-saved server. */
+  agentModels: (url?: string, key?: string) => {
+    const qs = new URLSearchParams();
+    if (url) qs.set('url', url);
+    if (key) qs.set('key', key);
+    const s = qs.toString();
+    return j<{ models: LlmModel[]; error?: string }>(`/api/agent/models${s ? `?${s}` : ''}`);
+  },
+  /** Saved Agent conversations, most recently updated first. */
+  conversations: () => j<Convo[]>('/api/agent/conversations'),
+  /** Create a conversation (the first turn of a chat); returns the new row with its id. */
+  createConversation: (row: { title?: string; blocks?: unknown[]; settings?: unknown }) =>
+    j<ConvoFull>('/api/agent/conversations', { method: 'POST', body: JSON.stringify(row) }),
+  getConversation: (id: number) => j<ConvoFull>(`/api/agent/conversations/${id}`),
+  /** Save a conversation's blocks / settings / title (bumps updated_at). */
+  saveConversation: (id: number, patch: { blocks?: unknown[]; settings?: unknown; title?: string }) =>
+    j<ConvoFull>(`/api/agent/conversations/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  /** Fork a conversation through a given block index into a new one. */
+  forkConversation: (id: number, upTo: number, title?: string) =>
+    j<ConvoFull>(`/api/agent/conversations/${id}/fork`, { method: 'POST', body: JSON.stringify({ upTo, ...(title ? { title } : {}) }) }),
+  deleteConversations: (ids: number[]) =>
+    j<{ deleted: number }>('/api/agent/conversations', { method: 'DELETE', body: JSON.stringify({ ids }) }),
   /** Set the machine-wide render size; null goes back to the default (OPENFIELD_RENDER_TIER or the GPU). */
   setRenderTier: (renderTier: RenderTier | null) =>
     j<{ renderTier: TierState }>('/api/settings', { method: 'PUT', body: JSON.stringify({ renderTier }) }),
@@ -122,6 +233,7 @@ export const api = {
   setVideoDecode: (videoDecode: VideoDecode | null) =>
     j<{ videoDecode: VideoDecodeState }>('/api/settings', { method: 'PUT', body: JSON.stringify({ videoDecode }) }),
   takes: (projectId: number | null) => j<Take[]>(`/api/takes${projectId ? `?project=${projectId}` : ''}`),
+  getTake: (id: number) => j<Take>(`/api/takes/${id}`),
   projects: () => j<Project[]>('/api/projects'),
   addProject: (name: string, folder: string) =>
     j<{ id: number }>('/api/projects', { method: 'POST', body: JSON.stringify({ name, folder }) }),
@@ -132,16 +244,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  upres: (takeId: number, opts: { model?: string; rife?: boolean }) =>
-    j<{ takeId: number }>(`/api/takes/${takeId}/upres`, { method: 'POST', body: JSON.stringify(opts) }),
-  stop: () => j<{ ok: true }>('/api/stop', { method: 'POST' }),
+  /** Stop: cancel the live render, mark the take stopped (the Agent page's Stop). */
+  stop: () => j<{ ok: true; stopped: number }>('/api/stop', { method: 'POST' }),
   cancelTake: (id: number) => j<{ ok: true }>(`/api/takes/${id}/cancel`, { method: 'POST' }),
   clearQueue: () => j<{ ok: true }>('/api/queue/clear', { method: 'POST' }),
   startEngine: () => j<{ ok: boolean }>('/api/engine/start', { method: 'POST' }),
+  stopEngine: () => j<{ ok: boolean; killed: number }>('/api/engine/stop', { method: 'POST' }),
+  engineConfig: () => j<EngineState>('/api/engine/config'),
+  setEngineConfig: (patch: { mode?: EngineMode; gpu?: EngineGpu }) =>
+    j<EngineState>('/api/engine/config', { method: 'PUT', body: JSON.stringify(patch) }),
   models: () => j<{ checkpoints: Record<string, string[]>; card: Record<string, unknown> }>('/api/models'),
   removeQueued: (promptId: string) => j<{ ok: true }>(`/api/queue/${promptId}`, { method: 'DELETE' }),
   star: (id: number, on: boolean) => j<Take>(`/api/takes/${id}/star`, { method: 'POST', body: JSON.stringify({ on }) }),
-  trash: (id: number) => j<{ ok: true }>(`/api/takes/${id}`, { method: 'DELETE' }),
+  /** Move a take to the trash: its files are stashed (recoverable), the row is kept. */
+  trash: (id: number) => j<{ ok: true; moved: number }>(`/api/takes/${id}`, { method: 'DELETE' }),
+  /** Bring a trashed take (and its stashed files) back. */
+  restore: (id: number) => j<{ ok: true; restored: number }>(`/api/takes/${id}/restore`, { method: 'POST' }),
+  /** Delete a take for good, files wherever they are. */
+  purge: (id: number) => j<{ ok: true; purged: number }>(`/api/takes/${id}?purge=1`, { method: 'DELETE' }),
+  /** Stage a finished take's file into the engine as a new input (server-side, any size). */
+  takeInput: (id: number) => j<{ token: string }>(`/api/takes/${id}/input`, { method: 'POST' }),
+  /** Takes in the trash. */
+  trashed: () => j<Take[]>('/api/takes?trashed=1'),
+  /** Empty the trash: every trashed take, files included. */
+  emptyTrash: () => j<{ ok: true; purged: number; takes: number }>('/api/takes/trash', { method: 'DELETE' }),
+  /** Move a selection to the trash in one request (Library's batch delete). */
+  trashMany: (ids: number[]) => j<{ ok: true; moved: number; failed: number }>('/api/takes/trash', { method: 'POST', body: JSON.stringify({ ids }) }),
   preflight: (refresh = false) =>
     j<{ bundles: BundleStatus[] }>(`/api/preflight${refresh ? '?refresh=1' : ''}`),
   preambles: () => j<Preamble[]>('/api/preambles'),
@@ -155,6 +283,10 @@ export const api = {
   phoneStart: () => j<PhoneSession>('/api/phone/start', { method: 'POST' }),
   /** Close our session only: a newer one from another window keeps running. */
   phoneStop: (id: string) => j<{ ok: true }>('/api/phone/stop', { method: 'POST', body: JSON.stringify({ id }) }),
+  /** Open the whole app on a paired phone (Setup > Phone). */
+  pairStart: () => j<PairSession>('/api/phoneapp/start', { method: 'POST' }),
+  pairStop: (id: string) => j<{ ok: true }>('/api/phoneapp/stop', { method: 'POST', body: JSON.stringify({ id }) }),
+  pairStatus: () => j<{ session: PairSession | null }>('/api/phoneapp'),
   cast: () => j<CastMember[]>('/api/cast'),
   createCast: (m: { name: string; kind: CastKind; notes: string; refs: CastSource[] }) =>
     j<CastMember>('/api/cast', { method: 'POST', body: JSON.stringify(m) }),
@@ -230,6 +362,7 @@ export interface LiveEvents {
   onTake: (take: Take) => void;
   onQueue: (remaining: number) => void;
   onPhone?: (e: PhoneEvent) => void;
+  onPhoneApp?: (e: PairEvent) => void;
 }
 
 /** Connect the live socket; auto-reconnects. Returns a cleanup fn. */
@@ -257,12 +390,50 @@ export function connectLive(ev: LiveEvents): () => void {
         if (d.type === 'take') ev.onTake(d.take);
         if (d.type === 'queue') ev.onQueue(d.remaining);
         if (d.type === 'phone') ev.onPhone?.(d);
+        if (d.type === 'phoneapp') ev.onPhoneApp?.(d);
       } catch { /* ignore */ }
     };
     ws.onclose = () => { if (!dead) setTimeout(open, 2500); };
   };
   open();
   return () => { dead = true; ws?.close(); };
+}
+
+/**
+ * One agent turn, streamed over SSE. `onEvent` fires for every event as it
+ * arrives (thinking, text, each tool call and its result, queued take ids).
+ * Aborting `signal` closes the stream and stops the server-side loop.
+ */
+export async function agentChat(message: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, history?: HistoryMsg[]): Promise<void> {
+  const r = await fetch('/api/agent/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, ...(history?.length ? { history } : {}) }),
+    signal,
+  });
+  if (!r.ok || !r.body) {
+    let msg = `agent ${r.status}`;
+    try { const d = (await r.json()) as { error?: string; message?: string }; msg = d.error || d.message || msg; } catch { /* not json */ }
+    throw new Error(msg);
+  }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).replace(/\r$/, '');
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data === '[DONE]') return;
+      if (!data) continue;
+      try { onEvent(JSON.parse(data) as AgentEvent); } catch { /* ignore a torn line */ }
+    }
+  }
 }
 
 export const mediaUrl = (id: number) => `/api/media/${id}`;
@@ -290,8 +461,11 @@ export async function uploadFile(f: File): Promise<string> {
   return (await api.upload(f.name, dataUrl)).name;
 }
 
-/** Upload a finished take's media as a new input (Animate, Use as reference). */
-export async function takeAsInput(id: number, name = `take_${id}.png`): Promise<string> {
-  const blob = await (await fetch(mediaUrl(id))).blob();
-  return uploadFile(new File([blob], name, { type: blob.type }));
+/**
+ * A finished take's media as a new input (Animate, Use as reference, stage
+ * look, ...). The server stages the file straight into the engine — at any
+ * size, without the bytes crossing the browser as base64.
+ */
+export async function takeAsInput(id: number): Promise<string> {
+  return (await api.takeInput(id)).token;
 }

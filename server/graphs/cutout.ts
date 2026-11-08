@@ -130,7 +130,7 @@ export function buildCutoutStillGraph(p: CutoutStillParams): Graph {
   };
   const m = matte(g, ['load', 0]);
   const out = composite(g, ['load', 0], m, p, p.width, p.height);
-  g.save = { class_type: 'SaveImage', inputs: { images: out, filename_prefix: p.filenamePrefix ?? 'openfield/cutout' } };
+  g.save = { class_type: 'SaveImage', inputs: { images: out, filename_prefix: p.filenamePrefix ?? 'morpheus/cutout' } };
   return g;
 }
 
@@ -174,13 +174,13 @@ export function buildCutoutVideoGraph(p: CutoutVideoParams): Graph {
     g.save = {
       class_type: 'VHS_VideoCombine',
       inputs: {
-        images: out, ...audio, frame_rate: p.fps, loop_count: 0, filename_prefix: p.filenamePrefix ?? 'openfield/cutout',
+        images: out, ...audio, frame_rate: p.fps, loop_count: 0, filename_prefix: p.filenamePrefix ?? 'morpheus/cutout',
         format: 'video/ProRes', profile: '4444', pingpong: false, save_output: true,
       },
     };
   } else {
     g.video = { class_type: 'CreateVideo', inputs: { images: out, fps: p.fps, ...audio } };
-    g.save = { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: p.filenamePrefix ?? 'openfield/cutout', format: 'auto', codec: 'auto' } };
+    g.save = { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: p.filenamePrefix ?? 'morpheus/cutout', format: 'auto', codec: 'auto' } };
   }
   return g;
 }

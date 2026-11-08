@@ -371,7 +371,7 @@
       "exposure": 0,
       "save_exr": true,
       "exr_color_space": "acescg",
-      "output_dir": "openfield/hdr/example_exr",
+      "output_dir": "morpheus/hdr/example_exr",
       "filename_prefix": "frame",
       "half_precision": true
     }
@@ -387,7 +387,7 @@
         "parts",
         2
       ],
-      "filename_prefix": "openfield/hdr/example_hlg",
+      "filename_prefix": "morpheus/hdr/example_hlg",
       "linear_primaries": "acescg"
     }
   },
@@ -414,7 +414,7 @@
         "vid",
         0
       ],
-      "filename_prefix": "openfield/hdr/example_preview",
+      "filename_prefix": "morpheus/hdr/example_preview",
       "format": "auto",
       "codec": "auto"
     }

@@ -45,7 +45,7 @@
         "gen",
         0
       ],
-      "filename_prefix": "openfield/shotlist",
+      "filename_prefix": "morpheus/shotlist",
       "format": "json"
     }
   }

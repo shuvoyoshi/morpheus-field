@@ -39,7 +39,7 @@ export function heavyModels(graph: Record<string, unknown>): Set<string> {
 
 /**
  * True when the next graph needs a large model that is not among the loaded
- * ones. Unknown (null, e.g. after OpenField started) or nothing loaded = no.
+ * ones. Unknown (null, e.g. after Morpheus started) or nothing loaded = no.
  */
 export function needsUnload(loaded: Set<string> | null, next: Set<string>): boolean {
   return !!loaded && loaded.size > 0 && [...next].some((m) => !loaded.has(m));
@@ -113,7 +113,7 @@ async function freeWhenNext(ahead: Set<string>, pollMs: number): Promise<void> {
  */
 export async function unloadOnModelSwitch(
   graph: Record<string, unknown>, opts = { pollMs: 250, settleMs: 2000 },
-): Promise<(() => void) | undefined> {
+): Promise<(() => Promise<void>) | undefined> {
   const next = heavyModels(graph);
   if (!next.size || !(await keepsModelsLoaded())) return;
   if (!needsUnload(loaded, next)) {
@@ -123,7 +123,7 @@ export async function unloadOnModelSwitch(
   loaded = new Set(next);
   console.log(`[openfield] unloading ComfyUI models before switching to ${[...next].join(', ')}`);
   const ahead = (await queuedIds()) ?? [];
-  if (ahead.length) return () => void freeWhenNext(new Set(ahead), opts.pollMs);
+  if (ahead.length) return () => freeWhenNext(new Set(ahead), opts.pollMs);
   await freeModels();
   // An idle worker acts on the flag right away; give it that moment before the job arrives.
   await sleep(opts.settleMs);

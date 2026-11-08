@@ -1,4 +1,4 @@
-# OpenField judge preview for Runpod: ComfyUI 0.38 + comfy-api-proxy + OpenField
+# Morpheus judge preview for Runpod: ComfyUI 0.38 + comfy-api-proxy + Morpheus
 # in judge mode, one HTTP port (3161). Models are not in the image: start.sh
 # downloads them to the pod's network volume (/workspace) on first boot.
 #
@@ -23,7 +23,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# System: Python for ComfyUI, ffmpeg for OpenField, a compiler for native wheels
+# System: Python for ComfyUI, ffmpeg for Morpheus, a compiler for native wheels
 # and better-sqlite3, tini to reap ComfyUI and the proxy.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -62,7 +62,7 @@ RUN python3 -m venv /opt/proxy \
  && /opt/proxy/bin/pip install "comfy-api-proxy==${PROXY_VERSION}" \
  && /opt/proxy/bin/comfy-api-proxy --help > /dev/null
 
-# OpenField, built once. `npm start` runs the server through tsx (a dev
+# Morpheus, built once. `npm start` runs the server through tsx (a dev
 # dependency), so the dev dependencies stay.
 WORKDIR /opt/openfield
 COPY package.json package-lock.json ./

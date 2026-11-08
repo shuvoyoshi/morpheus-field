@@ -6,10 +6,14 @@
 /** A finished take as the estimate reads it. */
 export interface EstimateTake { kind: string; settings: string; render_seconds: number | null; status: string }
 
+/** The take kind a request kind produces: music and speech both land as 'audio'. */
+const FAMILY: Record<string, string> = { music: 'audio', speech: 'audio' };
+const kindOf = (k: string) => (k === 'still' || k === 'upres' || k === 'object' ? k : FAMILY[k] ?? 'video');
+
 /** Whether a take ran like the query: same kind and app, model, quality, H3 turbo, about the same size and length. */
 export function ranLike(q: Record<string, string | undefined>, t: EstimateTake): boolean {
   const s = JSON.parse(t.settings);
-  if (t.kind !== (q.kind === 'still' || q.kind === 'upres' || q.kind === 'object' ? q.kind : 'video')) return false;
+  if (t.kind !== kindOf(q.kind ?? 'video')) return false;
   // Upscale takes only answer for the Upscale app, per mode.
   if ((s.app === 'upscale') !== (q.app === 'upscale')) return false;
   // Apps with their own pipeline (Remove background, Restyle, Swap) only answer for themselves.

@@ -169,7 +169,7 @@ export function buildTrellisGraph(p: TrellisParams): Graph {
   }
   g.apply = { class_type: 'ApplyTextureToMesh', inputs: { mesh: ['uv', 0], ...maps } };
   g.final = { class_type: 'MeshSmoothNormals', inputs: { mesh: ['apply', 0], crease_angle: 180 } };
-  g.save = { class_type: 'SaveGLB', inputs: { mesh: ['final', 0], filename_prefix: p.filenamePrefix ?? 'openfield/object' } };
+  g.save = { class_type: 'SaveGLB', inputs: { mesh: ['final', 0], filename_prefix: p.filenamePrefix ?? 'morpheus/object' } };
 
   const frames = p.turntableFrames ?? TURNTABLE.frames;
   if (frames > 0) addTurntable(g, ['final', 0], frames);
@@ -202,5 +202,5 @@ function addTurntable(g: Graph, mesh: Link, frames: number) {
     }
   }
   g.ttv = { class_type: 'CreateVideo', inputs: { images: batch!, fps: TURNTABLE.fps } };
-  g.turntable = { class_type: 'SaveVideo', inputs: { video: ['ttv', 0], filename_prefix: 'openfield/object_turntable', format: 'auto', codec: 'auto' } };
+  g.turntable = { class_type: 'SaveVideo', inputs: { video: ['ttv', 0], filename_prefix: 'morpheus/object_turntable', format: 'auto', codec: 'auto' } };
 }

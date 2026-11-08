@@ -1,6 +1,6 @@
 /**
  * Render a short looping preview for every motion preset into
- * public/presets/<id>.mp4, through the running OpenField server.
+ * public/presets/<id>.mp4, through the running Morpheus server.
  *
  *   npm run presets              # all missing
  *   npm run presets -- push-in   # just these ids (re-renders)

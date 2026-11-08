@@ -261,13 +261,30 @@ try {
   await check('Setup writes, phone, projects, stop and deletes: 403', async () => {
     const hits = await Promise.all([
       req(J, '/api/settings', { method: 'PUT', cookie, body: JSON.stringify({ renderTier: '1080p' }) }),
+      req(J, '/api/agent/config', { method: 'PUT', cookie, body: JSON.stringify({ url: 'http://127.0.0.1:9999/v1' }) }),
       req(J, '/api/phone/start', { method: 'POST', cookie }),
       req(J, '/api/projects', { method: 'POST', cookie, body: JSON.stringify({ name: 'x', folder: '/etc' }) }),
       req(J, '/api/stop', { method: 'POST', cookie }),
       req(J, '/api/takes/1', { method: 'DELETE', cookie }),
       req(J, '/api/cast/1', { method: 'DELETE', cookie }),
+      req(J, '/api/agent/conversations', { method: 'DELETE', cookie, body: JSON.stringify({ ids: [1] }) }),
     ]);
-    assert.deepEqual(hits.map((r) => r.status), [403, 403, 403, 403, 403, 403]);
+    assert.deepEqual(hits.map((r) => r.status), [403, 403, 403, 403, 403, 403, 403, 403]);
+  });
+  await check('the agent stays usable: chat, create, save and fork its conversations', async () => {
+    const created = await req(J, '/api/agent/conversations', { method: 'POST', cookie, body: JSON.stringify({ title: 'judge chat' }) });
+    assert.equal(created.status, 201);
+    const id = (await created.json()).id as number;
+    const saved = await req(J, `/api/agent/conversations/${id}`, { method: 'PUT', cookie, body: JSON.stringify({ blocks: [] }) });
+    assert.equal(saved.status, 200);
+    const fork = await req(J, `/api/agent/conversations/${id}/fork`, { method: 'POST', cookie, body: JSON.stringify({ upTo: 0 }) });
+    assert.equal(fork.status, 201);
+    // No LLM answers on this box, so the stream carries the config error —
+    // the point is the route itself is open, not 403.
+    const chat = await req(J, '/api/agent/chat', { method: 'POST', cookie, body: JSON.stringify({ message: 'hello' }) });
+    assert.equal(chat.status, 200, `agent chat answered ${chat.status}, not 403`);
+    const body = await chat.text();
+    assert.match(body, /LLM configured|No LLM/, 'the stream reports the missing LLM, not a refusal');
   });
   await check('login rate limit: the 6th wrong try from one address is 429', async () => {
     const codes: number[] = [];

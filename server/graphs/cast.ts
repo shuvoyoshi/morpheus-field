@@ -52,7 +52,7 @@ export function addSheetNodes(g: Record<string, unknown>, layout: SheetLayout, p
 }
 
 /** The sheet on its own, saved as a still: what the Cast page previews. */
-export function buildCastSheetGraph(layout: SheetLayout, filenamePrefix = 'OpenField_cast_sheet'): Record<string, unknown> {
+export function buildCastSheetGraph(layout: SheetLayout, filenamePrefix = 'Morpheus_cast_sheet'): Record<string, unknown> {
   const g: Record<string, unknown> = {};
   const sheet = addSheetNodes(g, layout);
   g.save = { class_type: 'SaveImage', inputs: { images: sheet, filename_prefix: filenamePrefix } };
@@ -143,7 +143,7 @@ export function buildCastVideoGraph(p: CastVideoParams): Record<string, unknown>
     vid: { class_type: 'CreateVideo', inputs: { images: ['dv', 0], fps } },
     save: {
       class_type: 'SaveVideo',
-      inputs: { video: ['vid', 0], filename_prefix: p.filenamePrefix ?? 'video/OpenField_cast', format: 'auto', codec: 'auto' },
+      inputs: { video: ['vid', 0], filename_prefix: p.filenamePrefix ?? 'video/Morpheus_cast', format: 'auto', codec: 'auto' },
     },
   });
   if (p.withAudio) {

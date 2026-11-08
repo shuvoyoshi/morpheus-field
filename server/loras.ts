@@ -1,5 +1,5 @@
 /**
- * Your own LoRAs: any LoRA file the engine can see that OpenField does not
+ * Your own LoRAs: any LoRA file the engine can see that Morpheus does not
  * already load for one of its apps, offered in Image (Qwen-Image, FLUX.2) and
  * Video (LTX-2.5, cast sheets included).
  *
@@ -20,7 +20,7 @@ import { config } from './config.js';
 import { comboOptions } from './comfy.js';
 import { BUNDLES } from './models.js';
 
-export type LoraFamily = 'ltx' | 'qwen' | 'flux2' | 'flux' | 'wan' | 'other';
+export type LoraFamily = 'ltx' | 'qwen' | 'flux2' | 'flux' | 'wan' | 'h3' | 'other';
 
 export interface UserLora {
   name: string;
@@ -34,7 +34,7 @@ export interface LoraPick { name: string; strength: number }
 
 export const MAX_USER_LORAS = 4;
 
-/** Files OpenField loads itself (effects, IC-LoRAs, distills): never offered as yours. */
+/** Files Morpheus loads itself (effects, IC-LoRAs, distills): never offered as yours. */
 const BUILT_IN = new Set(BUNDLES.flatMap((b) => b.files.filter((f) => f.dir === 'loras' || f.dir === 'embeddings').map((f) => f.file)));
 
 /**
@@ -47,8 +47,16 @@ const TASK_LORA = /ic-lora|lightning|turbo|lightx2v|distill|fasth3|marigold|mult
 
 /** The model each app's own LoRAs must match. */
 export const FAMILY_LABEL: Record<LoraFamily, string> = {
-  ltx: 'LTX', qwen: 'Qwen-Image', flux2: 'FLUX.2', flux: 'FLUX.1', wan: 'Wan', other: 'another model',
+  ltx: 'LTX', qwen: 'Qwen-Image', flux2: 'FLUX.2', flux: 'FLUX.1', wan: 'Wan', h3: 'MiniMax H3', other: 'another model',
 };
+
+/**
+ * H3 has no tensor-key signature that distinguishes it from other DiTs, so it
+ * is recognized by name (the distills and community LoRAs all say h3/minimax).
+ * A file the header cannot classify ('other'/null) is offered to H3 too: the
+ * worst case is ComfyUI logging "lora key not loaded" and doing nothing.
+ */
+const H3_NAME = /h3|minimax/i;
 
 /** Family from the tensor key names of a LoRA's safetensors header. */
 export function familyOf(keys: string[]): LoraFamily | 'not-lora' {
@@ -65,7 +73,7 @@ export function familyOf(keys: string[]): LoraFamily | 'not-lora' {
 }
 
 /** A folder path as ComfyUI reports it, made readable from this process (WSL sees D:\ as /mnt/d). */
-function localPath(dir: string): string {
+export function localPath(dir: string): string {
   const m = /^([A-Za-z]):[\\/](.*)$/.exec(dir);
   if (m && process.platform !== 'win32') return `/mnt/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}`;
   return dir;
@@ -94,11 +102,11 @@ async function readHeader(path: string): Promise<{ keys: string[]; meta: Record<
   const fh = await open(path, 'r');
   try {
     const lenBuf = Buffer.alloc(8);
-    await fh.read(lenBuf, 0, 8, 0);
+    if ((await fh.read(lenBuf, 0, 8, 0)).bytesRead < 8) throw new Error('bad header');
     const len = Number(lenBuf.readBigUInt64LE(0));
     if (len <= 0 || len > 100 * 1024 * 1024) throw new Error('bad header');
     const buf = Buffer.alloc(len);
-    await fh.read(buf, 0, len, 8);
+    if ((await fh.read(buf, 0, len, 8)).bytesRead !== len) throw new Error('truncated header');
     const h = JSON.parse(buf.toString()) as Record<string, unknown>;
     const meta = (h.__metadata__ ?? {}) as Record<string, string>;
     delete h.__metadata__;
@@ -152,7 +160,7 @@ export async function listUserLoras(): Promise<UserLora[]> {
     if (!/\.(safetensors|ckpt|pt|pth|bin)$/i.test(name)) continue;
     const c = name.endsWith('.safetensors') ? await classify(name, dirs) : { family: null };
     if (c.family === 'not-lora') continue;
-    out.push({ name, family: c.family, ...(c.trigger ? { trigger: c.trigger } : {}) });
+    out.push({ name, family: H3_NAME.test(name) ? 'h3' : c.family, ...(c.trigger ? { trigger: c.trigger } : {}) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -175,8 +183,12 @@ export async function pickLoras(raw: unknown, family: LoraFamily, appLabel: stri
   return asked.map((l) => {
     const known = byName.get(l.name);
     if (!known) throw new Error(`The engine has no LoRA named ${l.name}. Put it in ComfyUI's models/loras folder; it shows up without a restart.`);
-    if (known.family && known.family !== family) {
-      throw new Error(`${l.name} is made for ${FAMILY_LABEL[known.family]}. ${appLabel} runs ${FAMILY_LABEL[family]}, so it would do nothing there.`);
+    // H3 has no reliable header signature: accept h3, an unreadable header, or an
+    // unknown architecture; reject only a LoRA positively identified as another model.
+    const acceptable = (fam: LoraFamily | null) =>
+      fam == null || fam === family || (family === 'h3' && fam === 'other');
+    if (!acceptable(known.family)) {
+      throw new Error(`${l.name} is made for ${FAMILY_LABEL[known.family!]}. ${appLabel} runs ${FAMILY_LABEL[family]}, so it would do nothing there.`);
     }
     const s = Number(l.strength);
     return { name: l.name, strength: Number.isFinite(s) ? Math.max(-2, Math.min(2, s)) : 1 };

@@ -1,6 +1,6 @@
 # Third-party notices
 
-OpenField's own code is MIT (see [`LICENSE`](LICENSE)). It **redistributes no
+Morpheus's own code is MIT (see [`LICENSE`](LICENSE)). It **redistributes no
 model weights and no ComfyUI custom nodes**. Weights are downloaded by you, from
 their publishers, by `npm run models` or by the node packs on first use. Each one
 stays under its own license, listed below. Accepting those licenses, and
@@ -66,7 +66,7 @@ advice. The linked license text is what binds you.
 | MoGe-2 ViT-L normal (fp16) | Microsoft Research, repackaged by Comfy Org | MIT | Yes | [HF Comfy-Org/MoGe](https://huggingface.co/Comfy-Org/MoGe), [HF Ruicheng/moge-2-vitl-normal](https://huggingface.co/Ruicheng/moge-2-vitl-normal), [GitHub microsoft/MoGe](https://github.com/microsoft/MoGe) |
 | DWPose whole-body pose (`dw-ll_ucoco_384_bs5.torchscript.pt`) | IDEA Research; TorchScript export by hr16 | Apache 2.0 | Yes | [HF hr16/DWPose-TorchScript-BatchSize5](https://huggingface.co/hr16/DWPose-TorchScript-BatchSize5), [HF yzd-v/DWPose](https://huggingface.co/yzd-v/DWPose), [GitHub IDEA-Research/DWPose](https://github.com/IDEA-Research/DWPose) |
 | YOLOX-L person detector (`yolox_l.onnx`) | Megvii; hosted in the DWPose repo | Apache 2.0 | Yes | [HF yzd-v/DWPose](https://huggingface.co/yzd-v/DWPose), [GitHub Megvii-BaseDetection/YOLOX](https://github.com/Megvii-BaseDetection/YOLOX) |
-| Depth Anything V2 Small (`depth_anything_v2_vits.pth`), Mirror depth mode | Depth Anything team (HKU / TikTok) | Apache 2.0 (the Base, Large and Giant models are CC BY-NC 4.0; OpenField uses Small) | Yes | [HF depth-anything/Depth-Anything-V2-Small](https://huggingface.co/depth-anything/Depth-Anything-V2-Small), [GitHub DepthAnything/Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2#license) |
+| Depth Anything V2 Small (`depth_anything_v2_vits.pth`), Mirror depth mode | Depth Anything team (HKU / TikTok) | Apache 2.0 (the Base, Large and Giant models are CC BY-NC 4.0; Morpheus uses Small) | Yes | [HF depth-anything/Depth-Anything-V2-Small](https://huggingface.co/depth-anything/Depth-Anything-V2-Small), [GitHub DepthAnything/Depth-Anything-V2](https://github.com/DepthAnything/Depth-Anything-V2#license) |
 | RealESRGAN x4plus (`RealESRGAN_x4plus.pth`), the Upscale Sharpen default | Xintao Wang et al. | BSD-3-Clause | Yes | [GitHub xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) (v0.1.0 release). The installer fetches a byte-identical copy from [HF lllyasviel/Annotators](https://huggingface.co/lllyasviel/Annotators). |
 | 4x-UltraSharp (`4x-UltraSharp.pth`), opt-in Upscale Sharpen model (`upres-ultrasharp` bundle) | Kim2091 | CC BY-NC-SA 4.0 | **NO (non-commercial)** | [HF Kim2091/UltraSharp](https://huggingface.co/Kim2091/UltraSharp) |
 | SeedVR2 3B and 7B (`seedvr2_ema_3b_fp16`, `seedvr2_ema_7b_fp16`) and VAE (`ema_vae_fp16`), Upscale Redraw | ByteDance Seed; fp16 repackage by numz | Apache 2.0 | Yes | [HF numz/SeedVR2_comfyUI](https://huggingface.co/numz/SeedVR2_comfyUI), [HF ByteDance-Seed/SeedVR2-3B](https://huggingface.co/ByteDance-Seed/SeedVR2-3B), [HF ByteDance-Seed/SeedVR2-7B](https://huggingface.co/ByteDance-Seed/SeedVR2-7B), [GitHub ByteDance-Seed/SeedVR](https://github.com/ByteDance-Seed/SeedVR) |
@@ -90,8 +90,7 @@ advice. The linked license text is what binds you.
 | Qwen-Image-Edit-2509 Lightning 8-step V1.0 (optional, used when present) | lightx2v | Apache 2.0 | Yes | [HF lightx2v/Qwen-Image-Lightning](https://huggingface.co/lightx2v/Qwen-Image-Lightning) |
 | Qwen-Edit-2509 Multiple-angles LoRA (optional, used when present) | dx8152, repackaged by Comfy Org | Apache 2.0 | Yes | [HF dx8152/Qwen-Edit-2509-Multiple-angles](https://huggingface.co/dx8152/Qwen-Edit-2509-Multiple-angles) |
 | FLUX.2 Turbo LoRA (`Flux2TurboComfyv2`) | fal (original), ComfyUI conversion by ByteZSzn, repackaged by Comfy Org | FLUX non-commercial terms (fal's original card lists the FLUX [dev] Non-Commercial License; the ByteZSzn conversion declares no license, **unverified**) | **NO (non-commercial)** | [HF fal/FLUX.2-dev-Turbo](https://huggingface.co/fal/FLUX.2-dev-Turbo), [HF ByteZSzn/Flux.2-Turbo-ComfyUI](https://huggingface.co/ByteZSzn/Flux.2-Turbo-ComfyUI), [HF Comfy-Org/flux2-dev](https://huggingface.co/Comfy-Org/flux2-dev) |
-| MiniMax H3 turbo step-distill LoRAs (FL2V 4-step v1.0 / v1.1, 8-step v1.0; Ref2V 4-step v0.1) | lightx2v | Labelled Apache 2.0 by lightx2v. The H3 license defines distills and other Model Derivatives as H3 works under H3 terms, so assume the H3 license applies. | **GEO-RESTRICTED** | [HF lightx2v/Minimax-h3-Turbo](https://huggingface.co/lightx2v/Minimax-h3-Turbo) |
-| FastH3 DMD2 distill (`minimax_h3_fasth3_4step_dense_comfy.safetensors`), the optional `fasth3-6` preset; not in the installer | FastVideo | MiniMax H3 Community License (every FastVideo FastH3 repo carries it). Exact source repo for this filename is **unverified**. | **GEO-RESTRICTED** | [HF FastVideo](https://huggingface.co/FastVideo), e.g. [FastVideo-FastH3-4-step-Preview-v1-Dense-DataFree](https://huggingface.co/FastVideo/FastVideo-FastH3-4-step-Preview-v1-Dense-DataFree) |
+| MiniMax H3 turbo step-distill LoRA (Ref2V 4-step v0.1) | lightx2v | Labelled Apache 2.0 by lightx2v. The H3 license defines distills and other Model Derivatives as H3 works under H3 terms, so assume the H3 license applies. | **GEO-RESTRICTED** | [HF lightx2v/Minimax-h3-Turbo](https://huggingface.co/lightx2v/Minimax-h3-Turbo) |
 | LTX-2.5 22B Alpha-Gen IC-LoRA, the Cutout effect (`ltx-2.5-22b-ic-lora-alpha-gen-0.9`) | Lightricks | LTX-2.x Community License Agreement (repo card `ltx-2.x-community-license`) | Yes, under $10M | [HF Lightricks/LTX-2.5-22b-IC-LoRA-Alpha-Gen](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Alpha-Gen) (gated), [license](https://github.com/Lightricks/LTX-2/blob/main/LICENSE-2_x) |
 | LTX-2.5 22B Water-Simulation IC-LoRA, the Flood effect (`ltx-2.5-22b-ic-lora-water-simulation-0.9`) | Lightricks | LTX-2.x Community License Agreement (repo card `ltx-2.x-community-license`) | Yes, under $10M | [HF Lightricks/LTX-2.5-22b-IC-LoRA-Water-Simulation](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Water-Simulation) (gated), [license](https://github.com/Lightricks/LTX-2/blob/main/LICENSE-2_x) |
 | LTX-2.5 22B Day-To-Night IC-LoRA, the Nightfall effect (`ltx-2.5-22b-ic-lora-day-to-night-0.9`) | Lightricks | LTX-2.x Community License Agreement (repo card `ltx-2.x-community-license`) | Yes, under $10M | [HF Lightricks/LTX-2.5-22b-IC-LoRA-Day-To-Night](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Day-To-Night) (gated), [license](https://github.com/Lightricks/LTX-2/blob/main/LICENSE-2_x) |
@@ -145,12 +144,12 @@ are cloned by you into `ComfyUI/custom_nodes/`.
 | Vite (build only) | Vite contributors | MIT | Yes | [npm](https://www.npmjs.com/package/vite) |
 | Archivo, Inter, JetBrains Mono (via Fontsource) | their type designers | SIL Open Font License 1.1 | Yes | [Fontsource](https://fontsource.org) |
 
-ComfyUI, VideoHelperSuite and KJNodes are GPL-3.0. OpenField talks to ComfyUI over its
-HTTP API as a separate program and ships none of its code, so OpenField itself
+ComfyUI, VideoHelperSuite and KJNodes are GPL-3.0. Morpheus talks to ComfyUI over its
+HTTP API as a separate program and ships none of its code, so Morpheus itself
 stays MIT.
 
 Not used: `kabachuha/ltx2-hydraulic-press` states no license on its card, so
-OpenField does not fetch or offer it.
+Morpheus does not fetch or offer it.
 
 ## Keeping this file honest
 

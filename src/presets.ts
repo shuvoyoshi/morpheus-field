@@ -26,36 +26,25 @@ export function secondsToFrames(seconds: number): number {
 }
 
 /**
- * H3 step-distill (turbo) options. Mirrors H3_TURBO_PRESETS in
- * server/graphs/h3.ts — ids must stay in sync; the server is the authority on
- * which LoRA file and sigma shift each id actually applies.
- *
- * Reference mode has only the v0.1 ref2v distill, so every id collapses to that
- * one there (4 steps regardless of the label).
+ * H3 turbo (step distill) option. Mirrors H3_TURBO_PRESETS in
+ * server/graphs/h3.ts — the id must stay in sync; the server is the authority
+ * on which LoRA file and sigma shift the id actually applies.
  */
 export const H3_TURBO = [
-  { key: 'fasth3-6', label: '6-STEP · FASTH3', steps: 6,
-    note: 'FastVideo DMD2 distill. ~23% faster than the 4-step lightx2v at hero res and follows the prompt harder.' },
-  { key: 'v11-4', label: '4-STEP · v1.1', steps: 4,
-    note: 'Newest (8/20). Delta vs v1.0 undocumented upstream — A/B it.' },
-  { key: 'v10-4', label: '4-STEP · v1.0', steps: 4,
-    note: 'The known-quantity 4-step distill.' },
-  { key: 'v10-8', label: '8-STEP · v1.0', steps: 8,
-    note: 'Closer to base quality, still ~2.5x faster than full.' },
+  { key: 'turbo', label: '8-STEP · TURBO', steps: 8,
+    note: 'The v0.1 step distill at 8 steps — about 2.5x faster than the 20-step max.' },
 ] as const;
 
-/** LoRA filenames the turbo presets need present in ComfyUI's lora folder. */
+/** The step-distill the turbo preset applies, at strength 1.0. */
+export const H3_TURBO_LORA =
+  'minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors';
+
+/** LoRA filenames the turbo preset needs present in ComfyUI's lora folder. */
 export const H3_TURBO_FILES: Record<string, string> = {
-  'fasth3-6': 'minimax_h3_fasth3_4step_dense_comfy.safetensors',
-  'v11-4': 'minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors',
-  'v10-4': 'minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors',
-  'v10-8': 'minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors',
+  turbo: H3_TURBO_LORA,
 };
 /** The turbo presets whose LoRA ComfyUI lists, under exactly the name the graph asks for. */
 export const availableH3Turbo = (loras: readonly string[]) => {
   const have = new Set(loras);
   return H3_TURBO.filter((t) => have.has(H3_TURBO_FILES[t.key]));
 };
-
-export const H3_REF_TURBO_FILE =
-  'minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors';

@@ -1,5 +1,5 @@
 /**
- * OpenField server: Fastify on OPENFIELD_PORT (default 3161).
+ * Morpheus server: Fastify on OPENFIELD_PORT (default 3161).
  * Owns: generate/stop/queue API, job history, project folders, the live
  * relay (per-step previews from the Comfy SDK event stream), completion
  * handling, whisper transcription, and media serving. The browser never
@@ -8,13 +8,17 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import websocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
-import { createReadStream, existsSync, realpathSync, statSync } from 'fs';
+import { createReadStream, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from 'fs';
 import { dirname, extname, join, resolve, sep } from 'path';
+import { tmpdir } from 'os';
 import type { WebSocket } from 'ws';
 import * as comfy from './comfy.js';
 import * as eng from './engine.js';
 import { config, ROOT } from './config.js';
+import { Lru } from './lru.js';
+import { safeSettings } from './takeFiles.js';
 import { buildH3Graph, snapH3Length, turboProblem } from './graphs/h3.js';
+import { buildAcestepMusic, buildQwen3Speech } from './graphs/audio.js';
 import { buildLtxGraph } from './graphs/ltx.js';
 import { buildLtx25Graph, ltx25EffectiveSize, ltx25Mode, LTX25_FPS, snapFrames } from './graphs/ltx25.js';
 import { applyPost } from './graphs/director.js';
@@ -33,19 +37,20 @@ import { buildRestyleGraph, buildSwapGraph } from './graphs/restyle.js';
 import { checkerPreview } from './cutout.js';
 import { buildReshootGraph, buildReshootWarpPreviewGraph } from './graphs/reshoot.js';
 import { buildExtendGraph, buildSoundGraph, buildSpeakGraph, buildTransitionGraph } from './graphs/ltxtools.js';
-import { takes, projects, speed, preambles, takeWorkflows, cast as castDb, type CastKind } from './jobs.js';
+import { takes, projects, speed, preambles, takeWorkflows, conversations, cast as castDb, type CastKind } from './jobs.js';
 import {
   CAST_KINDS, MAX_REFS, allocate, isCastFile, castHeroFrame, composeInstruction, liveRefs, mentioned, plainText, refFrom, renameFiles,
   setCastQueue, sheetPlan, type HeroOpts,
 } from './cast.js';
 import { buildCastVideoGraph } from './graphs/cast.js';
-import { imageDims, saveToProject, safeShotName } from './files.js';
+import { imageDims, moveToProject, purgeTakeFiles, restoreTakeFiles, saveToProject, safeShotName, stashFiles, trashTakeFiles } from './files.js';
 import { transcribe } from './whisper.js';
 import { bundlesFor } from './models.js';
 import { modelsUnloaded } from './modelSwitch.js';
 import { blockingReason, clearPreflightCache, effectBlockingReason, preflight } from './preflight.js';
 import { effectById, effectPrompt } from '../src/effects.js';
 import { closePhoneSession, openPhoneSession, phoneSession } from './phone.js';
+import { closePairSession, openPairSession, pairSession } from './phoneApp.js';
 import { load as loadClip, measureLoop, planBridge, planRegen, planTrim, scoreWindow, videoInfo, type SeamMeasure } from './seam.js';
 import { buildSeamBridgeGraph, buildSeamRegenGraph, buildSeamTrimGraph } from './graphs/seam.js';
 import { buildHdrGraph } from './graphs/hdr.js';
@@ -60,6 +65,9 @@ import { isVideoDecode, type VideoDecode } from '../src/videoDecode.js';
 import { setVideoDecode, videoDecodeState } from './videoDecode.js';
 import { MIN_PASSWORD, installJudge, type JudgeState } from './judge.js';
 import { estimate } from './estimate.js';
+import { llmChat, type LLMContentPart, type LLMMessage } from './llm.js';
+import { effectiveLlmConfig, llmConfigState, setLlmConfig, listLlmModels, type LlmPatch } from './llmConfig.js';
+import { runAgent, type AgentEvent } from './agent.js';
 
 if (config.judge.on && config.judge.password.length < MIN_PASSWORD) {
   console.error(`OPENFIELD_JUDGE is on, so OPENFIELD_JUDGE_PASSWORD must be set (${MIN_PASSWORD} characters or more). Not starting.`);
@@ -84,10 +92,10 @@ if (config.judge.on) {
   };
   app.addHook('onRequest', async (req, reply) => {
     const host = (req.headers.host ?? '').replace(/:\d+$/, '').toLowerCase();
-    if (!LOCAL_HOSTS.has(host)) return reply.code(403).send({ error: 'OpenField only answers on this machine' });
+    if (!LOCAL_HOSTS.has(host)) return reply.code(403).send({ error: 'Morpheus only answers on this machine' });
     const origin = req.headers.origin;
-    if (origin && origin !== 'null' && !localOrigin(origin)) return reply.code(403).send({ error: 'OpenField only answers its own pages' });
-    if (origin === 'null' && req.method !== 'GET') return reply.code(403).send({ error: 'OpenField only answers its own pages' });
+    if (origin && origin !== 'null' && !localOrigin(origin)) return reply.code(403).send({ error: 'Morpheus only answers its own pages' });
+    if (origin === 'null' && req.method !== 'GET') return reply.code(403).send({ error: 'Morpheus only answers its own pages' });
   });
 }
 
@@ -168,12 +176,28 @@ async function onPromptFinished(promptId: string) {
     const project = take.project_id ? projects.get(take.project_id) : undefined;
     const folder = project?.folder || config.outputDir;
     const ext = extname(out.filename).slice(1) || (take.kind === 'still' ? 'png' : 'mp4');
-    // An upscale keeps its source's name: <shot>_<source seed>_UP.
-    const path = await saveToProject(folder, s.shotName || 'shot', s.fileSeed ?? s.seed ?? 0, data, {
+    const saveOpts = {
       ext,
       upres: take.kind === 'upres' || s.app === 'upscale',
       suffix: s.app === 'seam' ? '_LOOP' : s.app === 'hdr' ? '_HDR' : undefined,
-    });
+    };
+    // An upscale keeps its source's name: <shot>_<source seed>_UP.
+    // One copy: when the library sits on the engine's output volume, rename
+    // the engine's file into the project instead of writing the bytes again.
+    let path: string | null = null;
+    if (eng.isLocal() && take.prompt_id) {
+      const [rel, outDir] = await Promise.all([eng.savedRelPath(take.prompt_id, out.filename), comfy.comfyOutputDir()]);
+      if (rel && outDir) {
+        const src = join(outDir, rel);
+        try {
+          path = await moveToProject(src, folder, s.shotName || 'shot', s.fileSeed ?? s.seed ?? 0, saveOpts);
+        } catch (e) {
+          console.warn('[openfield] rename save fell back to copy:', e instanceof Error ? e.message : e);
+          takes.patchSettings(take.id, { engineFile: src });
+        }
+      }
+    }
+    if (!path) path = await saveToProject(folder, s.shotName || 'shot', s.fileSeed ?? s.seed ?? 0, data, saveOpts);
     await saveSidecars(path, h.extras ?? []);
     let shown = path;
     if (s.app === 'cutout' && ext === 'mov') {
@@ -187,8 +211,9 @@ async function onPromptFinished(promptId: string) {
     nextInScene(take);
     // Seam check for loops (and the next fix if it is still visible), HDR downloads.
     void afterRender(take.id).catch((e) => console.error(`[openfield] after take ${take.id}:`, e instanceof Error ? e.message : e));
-    // Voice transcript for videos, best-effort in the background
-    if (take.kind !== 'still' && take.kind !== 'object') {
+    // Voice transcript for videos, best-effort in the background. Audio takes
+    // are the words or the song themselves — transcribing them is a loop.
+    if (take.kind !== 'still' && take.kind !== 'object' && take.kind !== 'audio') {
       transcribe(path).then((t) => {
         if (t) {
           takes.setTranscript(take.id, t);
@@ -240,6 +265,7 @@ app.get('/api/status', async () => {
     target: eng.isLocal() ? 'local' : 'cloud',
     active: takes.active(),
     canLaunch: comfy.canLaunchEngine(),
+    engine: comfy.engineState(),
     comfyUrl: config.comfyUrl,
     renderTier,
     videoDecode,
@@ -265,6 +291,95 @@ app.put('/api/settings', async (req, reply) => {
   if ('renderTier' in b) setTier(b.renderTier as RenderTier | null);
   if ('videoDecode' in b) setVideoDecode(b.videoDecode as VideoDecode | null);
   return { renderTier: await tierState(), videoDecode: await videoDecodeState() };
+});
+
+// ---------- agent ----------
+// The in-app agent: a server-side loop that lets the local LLM drive the Morpheus
+// tool set (the same registry the MCP server exposes). Events stream over SSE so
+// the UI can show thinking, speech and each tool call as they happen. Closing the
+// connection (the UI's Stop) aborts the loop; queued renders are separate takes.
+// The agent's LLM wiring: a value saved in the app wins over the env var, per
+// field. Saving applies immediately (no restart); the env var stays the default.
+app.get('/api/agent/config', async () => llmConfigState());
+app.put('/api/agent/config', async (req, reply) => {
+  const b = (req.body ?? {}) as LlmPatch;
+  for (const f of ['url', 'model', 'key', 'reasoning'] as const) {
+    if (f in b && b[f] !== null && typeof b[f] !== 'string') {
+      return reply.code(400).send({ error: `${f} must be a string or null` });
+    }
+  }
+  setLlmConfig(b);
+  return llmConfigState();
+});
+/** The models the agent's LLM server offers (with stats on LM Studio). `url`/`key` load a not-yet-saved server. */
+app.get('/api/agent/models', async (req) => {
+  const q = req.query as { url?: string; key?: string };
+  return listLlmModels({ url: q.url, key: q.key });
+});
+app.post('/api/agent/chat', async (req, reply) => {
+  reply.hijack();
+  const res = reply.raw;
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+  const send = (e: AgentEvent) => { try { res.write(`data: ${JSON.stringify(e)}\n\n`); } catch { /* client gone */ } };
+  const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* noop */ } }, 15_000);
+  const ctl = new AbortController();
+  // Detect a real client disconnect on the *response* socket. Listening on
+  // req.raw's close is wrong: the request stream closes as soon as its body has
+  // been read (Fastify does that before the handler), which would abort a fresh
+  // turn immediately. `writableEnded` keeps a normal finish from tripping it.
+  const onClose = () => { if (!res.writableEnded) ctl.abort(new Error('client left')); };
+  res.on('close', onClose);
+  const body = (req.body ?? {}) as { message?: string; history?: LLMMessage[] };
+  try {
+    if (!body.message?.trim()) { send({ type: 'error', message: 'message is required' }); return; }
+    await runAgent({ message: body.message, history: body.history, onEvent: send, signal: ctl.signal });
+  } catch (e) {
+    send({ type: 'error', message: e instanceof Error ? e.message : String(e) });
+  } finally {
+    res.removeListener('close', onClose);
+    clearInterval(ping);
+    try { res.write('data: [DONE]\n\n'); res.end(); } catch { /* noop */ }
+  }
+});
+
+// Agent conversation history: created on the first turn of a chat, then saved as
+// it grows. Blocks are the UI's Block[] union, so retry and fork are cheap slices.
+app.get('/api/agent/conversations', async () => conversations.list(200));
+app.post('/api/agent/conversations', async (req, reply) => {
+  const b = (req.body ?? {}) as { title?: string; blocks?: unknown[]; settings?: unknown };
+  const blocks = Array.isArray(b.blocks) ? b.blocks : [];
+  const title = (typeof b.title === 'string' && b.title.trim()) ? b.title.trim().slice(0, 120) : (blocks.find((x: any) => x?.kind === 'user') as any)?.text?.slice(0, 60) || 'New chat';
+  const id = conversations.create(title, blocks, b.settings ?? {});
+  return reply.code(201).send(conversations.get(id));
+});
+app.get('/api/agent/conversations/:id', async (req, reply) => {
+  const id = Number((req.params as { id: string }).id);
+  const c = conversations.get(id);
+  return c ? c : reply.code(404).send({ error: 'not found' });
+});
+app.put('/api/agent/conversations/:id', async (req, reply) => {
+  const id = Number((req.params as { id: string }).id);
+  const b = (req.body ?? {}) as { blocks?: unknown[]; settings?: unknown; title?: string };
+  if (b.blocks !== undefined && !Array.isArray(b.blocks)) return reply.code(400).send({ error: 'blocks must be an array' });
+  conversations.save(id, { ...(b.blocks !== undefined ? { blocks: b.blocks } : {}), ...(b.settings !== undefined ? { settings: b.settings } : {}), ...(typeof b.title === 'string' ? { title: b.title.slice(0, 120) } : {}) });
+  const c = conversations.get(id);
+  return c ? c : reply.code(404).send({ error: 'not found' });
+});
+app.post('/api/agent/conversations/:id/fork', async (req, reply) => {
+  const id = Number((req.params as { id: string }).id);
+  const b = (req.body ?? {}) as { upTo?: number; title?: string };
+  const upTo = Number.isInteger(b.upTo) && b.upTo! >= 0 ? b.upTo! : 0;
+  try {
+    const newId = conversations.fork(id, upTo, (typeof b.title === 'string' && b.title.trim()) ? b.title.trim().slice(0, 120) : 'Fork');
+    return reply.code(201).send(conversations.get(newId));
+  } catch (e) {
+    return reply.code(404).send({ error: e instanceof Error ? e.message : 'not found' });
+  }
+});
+app.delete('/api/agent/conversations', async (req) => {
+  const b = (req.body ?? {}) as { ids?: unknown };
+  const ids = Array.isArray(b.ids) ? b.ids : [];
+  return { deleted: conversations.deleteMany(ids.map((n) => Number(n))) };
 });
 
 app.post('/api/upload', async (req, reply) => {
@@ -309,6 +424,33 @@ app.post('/api/phone/stop', async (req) => {
 
 app.get('/api/phone', async () => ({ session: phoneSession() }));
 
+// ---------- open the app on your phone ----------
+// Pairing is a token-gated reverse proxy of the whole app on its own LAN
+// listener (server/phoneApp.ts); the phone's browser is a second desktop.
+
+app.post('/api/phoneapp/start', async (_req, reply) => {
+  try {
+    const upstream = config.uiOrigin || `http://127.0.0.1:${config.serveStatic ? config.port : config.uiPort}`;
+    const info = await openPairSession({
+      port: config.phoneAppPort,
+      host: config.phoneAppHost,
+      upstream,
+      onState: (id, st) => broadcast({ type: 'phoneapp', id, ...st }),
+    });
+    return info;
+  } catch (e) {
+    return reply.code(503).send({ error: e instanceof Error ? e.message : 'could not open the phone pairing' });
+  }
+});
+
+app.post('/api/phoneapp/stop', async (req) => {
+  const id = (req.body as { id?: string } | undefined)?.id;
+  if (!id || pairSession()?.id === id) closePairSession('cancelled');
+  return { ok: true };
+});
+
+app.get('/api/phoneapp', async () => ({ session: pairSession() }));
+
 interface Built {
   graph: Record<string, unknown>;
   kind: string;
@@ -319,7 +461,8 @@ interface Built {
 
 /** What the continue tools need to know about an uploaded clip or sound file. */
 interface Probe { seconds: number; frames: number; w: number; h: number; audio: boolean; video: boolean }
-const probes = new Map<string, Probe>();
+// Bounded: one entry per uploaded input token, refreshed on each hit.
+const probes = new Lru<string, Probe>(256);
 async function probeInput(token: string): Promise<Probe> {
   const hit = probes.get(token);
   if (hit) return hit;
@@ -556,6 +699,35 @@ async function graphFor(b: any, seed: number): Promise<Built> {
   if (b.kind === 'stage-look') return stageLookGraph(b, seed);
   if (b.kind === 'stage') return stageShotGraph(b, seed);
   if (b.kind === 'object') return objectGraph(b, seed);
+  // Audio app: one take kind ('audio') for both modes, settings carry the rest.
+  if (b.kind === 'music') {
+    const lyrics = String(b.lyrics ?? '').trim();
+    const tags = String(b.tags ?? '').trim();
+    if (!lyrics && !tags) throw new Error('Write some lyrics or tags first');
+    return {
+      kind: 'audio',
+      graph: buildAcestepMusic({
+        lyrics, tags,
+        model: b.model === 'base' ? 'base' : 'turbo',
+        seconds: Math.max(5, Math.min(300, Math.round(Number(b.seconds) || 15))),
+        key: String(b.key ?? 'E minor'), bpm: Number(b.bpm) || 120,
+        timesignature: String(b.timesignature ?? '4'), language: String(b.language ?? 'en'),
+        seed,
+      }),
+      settings: { shotName: String(b.shotName ?? (tags || lyrics).slice(0, 30)) },
+    };
+  }
+  if (b.kind === 'speech') {
+    const text = String(b.text ?? '').trim();
+    if (!text) throw new Error('Write the words to say first');
+    return {
+      kind: 'audio',
+      graph: buildQwen3Speech({
+        text, instruct: String(b.instruct ?? ''), language: String(b.language ?? 'Auto'), seed,
+      }),
+      settings: { shotName: String(b.shotName ?? text.slice(0, 30)) },
+    };
+  }
 
   // Cast engines (resolveCast decided them from the @mentions).
   if (b.castEngine === 'sheet' && b.castSheet) {
@@ -793,7 +965,7 @@ async function graphFor(b: any, seed: number): Promise<Built> {
     kind = 'video';
     const turbo = typeof b.h3Turbo === 'string' && b.h3Turbo ? b.h3Turbo : undefined;
     if (turbo) {
-      const problem = turboProblem(turbo, !!b.refImages?.length, new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name')));
+      const problem = turboProblem(turbo, new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name')));
       if (problem) throw new Error(problem);
     }
     graph = buildH3Graph({
@@ -807,9 +979,8 @@ async function graphFor(b: any, seed: number): Promise<Built> {
       endImage: b.endImage,
       refImages: b.refImages,
       checkpoint: typeof b.checkpoint === 'string' ? b.checkpoint : undefined,
-      extraLora: typeof b.extraLora === 'string' && b.extraLora ? b.extraLora : undefined,
-      extraLoraStrength: b.extraLoraStrength,
-      // Turbo overrides steps/shift inside the builder; '' = full sampling.
+      loras: (await pickLoras(b.loras, 'h3', 'Video')).map((l) => ({ file: l.name, strength: l.strength })),
+      // Turbo adds its distill + sigma shift inside the builder; '' = max sampling.
       turbo,
       // House rule: no audio on visual loops. Opt in per shot for dialogue.
       withAudio: !!b.withAudio,
@@ -865,7 +1036,7 @@ function buildEffectGraph(b: any, seed: number): Record<string, unknown> {
     endImage: fx.input === 'still' && fx.loopable && b.loop ? b.startImage : undefined,
     withAudio: !!b.withAudio,
     ...(fx.ic ? { icLora: { ...lora, video: b.sourceVideo } } : { loras: [lora] }),
-    filenamePrefix: `openfield/effect_${fx.id}`,
+    filenamePrefix: `morpheus/effect_${fx.id}`,
   });
 }
 
@@ -953,6 +1124,7 @@ const flux2Refs = (b: any): string[] => {
 function loraFamily(b: any): LoraFamily | null {
   if (b.kind === 'still') return b.model === 'flux2' ? 'flux2' : 'qwen';
   if (isLtxShot(b)) return 'ltx';
+  if ((b.kind === undefined || b.kind === 'video') && b.videoModel === 'h3') return 'h3';
   return null;
 }
 
@@ -1142,12 +1314,16 @@ async function queueTakes(b: any, count: number): Promise<number[]> {
     } catch (e) {
       throw Object.assign(e instanceof Error ? e : new Error('bad request'), { takeIds });
     }
+    // A parent is either set by the graph builder (upscale, cutout, HDR, object,
+    // seam) or carried in the body as sourceTake/upresOf (edit, mirror, ...). The
+    // body value is the fallback so every stable single-source app records its chain.
+    const parent = built.parent ?? (typeof one.sourceTake === 'number' ? one.sourceTake : typeof one.upresOf === 'number' ? one.upresOf : null);
     const takeId = takes.create({
-      project_id: b.projectId ?? (built.parent ? takes.get(built.parent)?.project_id ?? null : null),
+      project_id: b.projectId ?? (parent ? takes.get(parent)?.project_id ?? null : null),
       kind: built.kind,
       shot_name: String(built.settings?.shotName ?? one.shotName ?? 'shot'),
       settings: { ...one, ...built.settings, seed, count: undefined },
-      parent_take_id: built.parent,
+      parent_take_id: parent,
     });
     try {
       takeIds.push(takeId);
@@ -1646,7 +1822,7 @@ async function stageShotGraph(b: any, seed: number): Promise<Built> {
   const prompt = typeof b.prompt === 'string' && b.prompt.trim() ? b.prompt.trim() : 'A finished film shot.';
   return {
     kind: 'video',
-    graph: buildStageShotGraph({ clay: b.clayVideo, height: clip.h, look: b.lookImage, prompt, seed, filenamePrefix: 'openfield/stage' }),
+    graph: buildStageShotGraph({ clay: b.clayVideo, height: clip.h, look: b.lookImage, prompt, seed, filenamePrefix: 'morpheus/stage' }),
     settings: { width: clip.w, height: clip.h, seconds: Math.round(clip.seconds * 10) / 10, lengthFrames: b.frames },
   };
 }
@@ -1762,9 +1938,160 @@ app.post('/api/takes/:id/upres', async (req, reply) => {
   }
 });
 
+/**
+ * The poster file for a take, created on demand. Stills and 3D subjects serve
+ * the image; a clip pulls a JPEG from 0.5s in (cached next to the file); an
+ * object falls back to its isolated subject. Null when there is no frame (audio).
+ */
+async function posterFile(t: { kind: string; output_path: string | null }): Promise<string | null> {
+  if (!t.output_path || !existsSync(t.output_path)) return null;
+  if (t.kind === 'audio') return null;
+  if (t.output_path.endsWith('.png')) return t.output_path;
+  const model = isModelFile(t.output_path);
+  if (model && !existsSync(`${t.output_path}.turntable.mp4`)) {
+    const subject = `${t.output_path}.subject.png`;
+    return existsSync(subject) ? subject : null;
+  }
+  const from = model ? `${t.output_path}.turntable.mp4` : t.output_path;
+  const poster = `${t.output_path}.poster.jpg`;
+  if (!existsSync(poster)) {
+    const { execFile } = await import('child_process');
+    await new Promise<void>((res) =>
+      execFile(config.ffmpegBin, ['-v', 'error', '-y', '-ss', model ? '0' : '0.5', '-i', from, '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '4', poster], () => res()),
+    );
+    if (!existsSync(poster)) return null;
+  }
+  return poster;
+}
+
+/**
+ * Up to `n` frames across a clip, for the agent's VLM to judge motion. One per
+ * second, downscaled, as base64 data URLs. Best-effort: a failure yields fewer
+ * (or no) frames rather than an error.
+ */
+async function sampleFrames(outputPath: string, n: number): Promise<{ data: string; mimeType: string }[]> {
+  const { execFile } = await import('child_process');
+  const { readFile } = await import('fs/promises');
+  const dir = mkdtempSync(join(tmpdir(), 'openfield-frames-'));
+  const out: { data: string; mimeType: string }[] = [];
+  try {
+    await new Promise<void>((res) => execFile(
+      config.ffmpegBin, ['-v', 'error', '-y', '-i', outputPath, '-vf', 'fps=1,scale=480:-2', '-frames:v', String(n), join(dir, 'f%02d.jpg')],
+      () => res(),
+    ));
+    for (const f of readdirSync(dir).filter((x) => x.endsWith('.jpg')).sort()) {
+      out.push({ data: (await readFile(join(dir, f))).toString('base64'), mimeType: 'image/jpeg' });
+    }
+  } catch { /* best-effort */ }
+  finally { rmSync(dir, { recursive: true, force: true }); }
+  return out;
+}
+
+/**
+ * Critique a finished take against the request. Kind-aware: a still or 3D model
+ * shows its frame, a clip shows sampled frames plus any transcript, and audio
+ * shows its sleeve notes (music) or words (speech) — the VLM cannot hear. The
+ * agent's LLM scores it and names one fix. A text-only model (or a server that
+ * rejects images) degrades to the text record.
+ */
+app.post('/api/takes/:id/critique', async (req, reply) => {
+  const t = takes.get(Number((req.params as any).id));
+  if (!t) return reply.code(404).send({ error: 'take not found' });
+  if (t.status !== 'done' || !t.output_path) return reply.code(409).send({ error: `take is ${t.status}` });
+  const ec = llmConfigState();
+  if (!ec.ready) return reply.code(503).send({ error: ec.note || 'No LLM is configured for the agent' });
+  const b = (req.body ?? {}) as { request?: string; verify_words?: boolean };
+  const request = typeof b.request === 'string' ? b.request.trim() : '';
+  if (!request) return reply.code(400).send({ error: 'request is required: what this take was supposed to do' });
+
+  const s = JSON.parse(t.settings || '{}') as Record<string, any>;
+  const record: Record<string, unknown> = {
+    kind: t.kind, app: s.app ?? null, model: s.model ?? s.videoModel ?? null,
+    prompt: s.userPrompt ?? s.prompt ?? null,
+    ...(s.tags ? { tags: s.tags } : {}), ...(s.lyrics ? { lyrics: s.lyrics } : {}),
+    ...(s.text ? { words: s.text } : {}), ...(s.instruct ? { voice: s.instruct } : {}),
+    ...(s.key ? { key: s.key, bpm: s.bpm ?? null, timesignature: s.timesignature ?? null } : {}),
+    width: s.width ?? null, height: s.height ?? null, seconds: s.seconds ?? null, seed: s.seed ?? null,
+    ...(t.transcript ? { transcript: t.transcript } : {}),
+    error: t.error ?? null,
+  };
+
+  // Visual evidence by output type: a clip is sampled, everything else with a
+  // picture is its poster, audio has none (the model cannot hear it).
+  let frames: { data: string; mimeType: string }[] = [];
+  if (t.kind !== 'audio' && t.output_path) {
+    if (/\.(mp4|mov|webm|m4v)$/i.test(t.output_path)) frames = await sampleFrames(t.output_path, 6);
+    else {
+      const f = await posterFile(t);
+      const { readFile } = await import('fs/promises');
+      if (f) frames = [{ data: (await readFile(f)).toString('base64'), mimeType: f.endsWith('.png') ? 'image/png' : 'image/jpeg' }];
+    }
+  }
+  // Opt-in (decision: verify the spoken words). For a speech take, transcribe the
+  // render so the model can flag a mismatch with the requested words.
+  let wordVerify: string | undefined;
+  if (t.kind === 'audio' && s.text && b.verify_words) {
+    if (config.whisperBin) {
+      const rendered = await transcribe(t.output_path!);
+      wordVerify = rendered ? `Rendered words: ${rendered}` : 'Whisper produced no transcript';
+    } else wordVerify = 'skipped (WHISPER_BIN is not set)';
+  }
+
+  const role: Record<string, string> = {
+    still: 'You are a senior film still editor. Score subject fidelity, composition, lighting and technical quality (1-5 each).',
+    video: 'You are a senior film editor. Score subject fidelity, motion, composition, lighting and shot-to-shot coherence (1-5 each).',
+    upres: 'You are a senior finisher. Score sharpness, real detail and color fidelity (1-5 each).',
+    object: 'You are a senior 3D art director. Score shape, texture and presentation (1-5 each).',
+    audio: 'You are a senior audio producer. You cannot hear the audio: judge only the sleeve notes (music) or the words and voice direction (speech) against the request. Score fit, structure and intent (1-5 each).',
+  };
+  const build = (withImages: boolean): LLMContentPart[] => {
+    const text = `Request:\n${request}\n\nTake record:\n${JSON.stringify(record, null, 2)}${wordVerify ? `\n\n${wordVerify}` : ''}\n\nRespond with JSON only: {"scores":{...},"verdict":"one sentence","fixes":["the single most impactful fix"],"note":"optional"}`;
+    const parts: LLMContentPart[] = [{ type: 'text', text }];
+    if (withImages) for (const f of frames) parts.push({ type: 'image_url', image_url: { url: `data:${f.mimeType};base64,${f.data}` } });
+    return parts;
+  };
+
+  const cfg = effectiveLlmConfig();
+  const ask = (parts: LLMContentPart[]) => llmChat(cfg, { messages: [{ role: 'system', content: role[t.kind] ?? role.still }, { role: 'user', content: parts }], temperature: 0.3 });
+  let content: string; let usedImage = frames.length > 0;
+  try {
+    ({ content } = await ask(build(true)));
+  } catch {
+    // A text-only model, or a server that refuses image parts: retry on the record alone.
+    usedImage = false;
+    ({ content } = await ask(build(false)));
+  }
+
+  const m = /\{[\s\S]*\}/.exec(content || '');
+  let parsed: { scores?: unknown; verdict?: unknown; fixes?: unknown } | null = null;
+  if (m) { try { parsed = JSON.parse(m[0]); } catch { parsed = null; } }
+  return {
+    kind: t.kind,
+    scores: parsed?.scores ?? null,
+    verdict: typeof parsed?.verdict === 'string' ? parsed.verdict : (content || 'no reply').slice(0, 400),
+    fixes: Array.isArray(parsed?.fixes) ? (parsed!.fixes as unknown[]).map((x) => String(x)) : [],
+    used_image: usedImage,
+    frames: frames.length,
+    ...(wordVerify !== undefined ? { word_verify: wordVerify } : {}),
+  };
+});
+
+/**
+ * Stop (the Agent page's Stop button): cancel the live render, mark the take
+ * stopped and tell the UI. 'stopped' is terminal, so the engine's late report
+ * of the dead job cannot relabel it. Takes still waiting in the queue are
+ * separate takes — cancel them individually.
+ */
 app.post('/api/stop', async () => {
-  for (const t of takes.active()) if (t.status === 'rendering' && t.prompt_id) await eng.cancel(t.prompt_id).catch(() => {});
-  return { ok: true };
+  let stopped = 0;
+  for (const t of takes.active()) {
+    if (t.status !== 'rendering' || !t.prompt_id) continue;
+    await eng.cancel(t.prompt_id).catch(() => {});
+    takes.fail(t.id, 'stopped', true);
+    broadcast({ type: 'take', take: takes.get(t.id) });
+    stopped++;
+  }
+  return { ok: true, stopped };
 });
 
 /** Cancel one take — interrupt if it's the live render, dequeue if waiting. */
@@ -1811,6 +2138,26 @@ app.post('/api/engine/start', async (_req, reply) => {
   const ok = await comfy.launchEngine();
   if (ok) clearPreflightCache(); // fresh engine may expose different weights
   return { ok };
+});
+
+/** Stop a running ComfyUI (the python and the bat window that started it). */
+app.post('/api/engine/stop', async () => {
+  const r = await comfy.stopEngine();
+  clearPreflightCache();
+  return { ok: r.ok, killed: r.killed };
+});
+
+/** The saved LAN/WAN + card choice (Setup > Engine). */
+app.get('/api/engine/config', async () => comfy.engineState());
+
+app.put('/api/engine/config', async (req, reply) => {
+  const b = (req.body ?? {}) as { mode?: unknown; gpu?: unknown };
+  const mode = b.mode === 'lan' || b.mode === 'wan' ? b.mode : undefined;
+  const gpu = b.gpu === '4090' || b.gpu === '5090' || b.gpu === 'both' ? b.gpu : undefined;
+  if (!mode && !gpu) return reply.code(400).send({ error: 'send mode (lan|wan) and/or gpu (4090|5090|both)' });
+  if (b.mode !== undefined && mode === undefined) return reply.code(400).send({ error: 'mode is lan or wan' });
+  if (b.gpu !== undefined && gpu === undefined) return reply.code(400).send({ error: 'gpu is 4090, 5090 or both' });
+  return comfy.setEngineSelection({ mode, gpu });
 });
 
 /** What each feature needs on disk, and what is actually there. */
@@ -1934,8 +2281,14 @@ app.put('/api/cast/:id', async (req, reply) => {
 });
 
 app.delete('/api/cast/:id', async (req) => {
-  // The pictures stay on disk under <output>/Cast: deleting a member never deletes files.
-  castDb.delete(Number((req.params as any).id));
+  const id = Number((req.params as any).id);
+  const m = castDb.get(id);
+  if (m) {
+    // The pictures go to the trash rather than being left loose in the output folder.
+    await stashFiles(m.refs.map((r) => r.file), `cast-${id}`).catch((e) =>
+      console.error(`[openfield] could not trash the cast pictures of ${m.name}:`, e instanceof Error ? e.message : e));
+  }
+  castDb.delete(id);
   return { ok: true };
 });
 
@@ -2024,8 +2377,13 @@ app.delete('/api/queue/:promptId', async (req) => {
 });
 
 app.get('/api/takes', async (req) => {
+  if ((req.query as any).trashed) return takes.trashed(500);
   const pid = (req.query as any).project ? Number((req.query as any).project) : null;
   return takes.list(pid, 500);
+});
+app.get('/api/takes/:id', async (req, reply) => {
+  const t = takes.get(Number((req.params as any).id));
+  return t ? t : reply.code(404).send({ error: 'take not found' });
 });
 
 /**
@@ -2080,9 +2438,82 @@ app.post('/api/takes/:id/star', async (req) => {
   return takes.get(id);
 });
 
-app.delete('/api/takes/:id', async (req) => {
-  takes.delete(Number((req.params as any).id));
-  return { ok: true };
+/**
+ * A finished take as an input for a new take (Animate, a reference, a stage
+ * look, ...). The server stages the file straight into the engine, so it
+ * works at any size — the old path round-tripped the bytes through the
+ * browser as a base64 data URL.
+ */
+app.post('/api/takes/:id/input', async (req, reply) => {
+  const t = takes.get(Number((req.params as any).id));
+  if (!t) return reply.code(404).send({ error: 'not found' });
+  if (!t.output_path) return reply.code(409).send({ error: 'this take has no file yet' });
+  if (t.status !== 'done') return reply.code(409).send({ error: 'this take is not finished yet' });
+  if (!existsSync(t.output_path)) return reply.code(410).send({ error: `the take's file is no longer on disk: ${t.output_path}` });
+  try {
+    if (statSync(t.output_path).size > 2 * 1024 ** 3) return reply.code(413).send({ error: 'this file is over 2 GB; too big to stage as an input' });
+    const token = await stageTakeFile(t, 'take');
+    return { token };
+  } catch (e) {
+    return reply.code(500).send({ error: e instanceof Error ? e.message : 'could not stage the take as an input' });
+  }
+});
+
+/** Empty the trash: every trashed take, files included, gone for good. */
+app.delete('/api/takes/trash', async () => {
+  let purged = 0;
+  let removed = 0;
+  for (const t of takes.trashed()) {
+    purged += await purgeTakeFiles(t);
+    takes.delete(t.id);
+    removed++;
+  }
+  return { ok: true, purged, takes: removed };
+});
+
+/** Move a selection to the trash in one request (Library's batch delete). */
+app.post('/api/takes/trash', async (req, reply) => {
+  const b = (req.body ?? {}) as { ids?: unknown };
+  const ids = Array.isArray(b.ids) ? [...new Set(b.ids.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0))] : [];
+  if (!ids.length) return reply.code(400).send({ error: 'ids required' });
+  let moved = 0;
+  let failed = 0;
+  for (const id of ids) {
+    const t = takes.get(id);
+    if (!t) { failed++; continue; }
+    try {
+      moved += await trashTakeFiles(t);
+      takes.setTrashed(id, true);
+    } catch { failed++; }
+  }
+  return { ok: true, moved, failed };
+});
+
+app.delete('/api/takes/:id', async (req, reply) => {
+  const id = Number((req.params as any).id);
+  const t = takes.get(id);
+  if (!t) return reply.code(404).send({ error: 'not found' });
+  if ((req.query as any)?.purge) {
+    // Delete for good: the take's files wherever they are, plus its trash folder.
+    const purged = await purgeTakeFiles(t);
+    takes.delete(id);
+    return { ok: true, purged };
+  }
+  // Default: the trash. The files are moved, not deleted, until a purge.
+  const moved = await trashTakeFiles(t);
+  takes.setTrashed(id, true);
+  return { ok: true, moved };
+});
+
+app.post('/api/takes/:id/restore', async (req, reply) => {
+  const id = Number((req.params as any).id);
+  const t = takes.get(id);
+  if (!t) return reply.code(404).send({ error: 'not found' });
+  if (!t.trashed_at) return reply.code(400).send({ error: 'this take is not in the trash' });
+  const res = await restoreTakeFiles(t);
+  if (res.remapped) takes.remap(id, res.remapped);
+  takes.setTrashed(id, false);
+  return { ok: true, restored: res.restored };
 });
 
 app.get('/api/projects', async () => projects.list());
@@ -2114,31 +2545,11 @@ app.get('/api/input-image/:name', async (req, reply) => {
  */
 app.get('/api/poster/:id', async (req, reply) => {
   const t = takes.get(Number((req.params as any).id));
-  if (!t?.output_path || !existsSync(t.output_path)) return reply.code(404).send({ error: 'not found' });
-  if (t.output_path.endsWith('.png')) {
-    reply.header('Content-Type', 'image/png').header('Cache-Control', 'max-age=86400');
-    return reply.send(createReadStream(t.output_path));
-  }
-  // An object's poster is the first turntable frame (a three-quarter view), or
-  // the isolated subject when there is no turntable.
-  const model = isModelFile(t.output_path);
-  if (model && !existsSync(`${t.output_path}.turntable.mp4`)) {
-    const subject = `${t.output_path}.subject.png`;
-    if (!existsSync(subject)) return reply.code(404).send({ error: 'no poster for this object' });
-    reply.header('Content-Type', 'image/png').header('Cache-Control', 'max-age=3600');
-    return reply.send(createReadStream(subject));
-  }
-  const from = model ? `${t.output_path}.turntable.mp4` : t.output_path;
-  const poster = `${t.output_path}.poster.jpg`;
-  if (!existsSync(poster)) {
-    const { execFile } = await import('child_process');
-    await new Promise<void>((res) =>
-      execFile(config.ffmpegBin, ['-v', 'error', '-y', '-ss', model ? '0' : '0.5', '-i', from, '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '4', poster], () => res()),
-    );
-    if (!existsSync(poster)) return reply.code(500).send({ error: 'poster extraction failed' });
-  }
-  reply.header('Content-Type', 'image/jpeg').header('Cache-Control', 'max-age=86400');
-  return reply.send(createReadStream(poster));
+  if (!t) return reply.code(404).send({ error: 'not found' });
+  const file = await posterFile(t);
+  if (!file) return reply.code(404).send({ error: 'no poster for this take' });
+  reply.header('Content-Type', file.endsWith('.png') ? 'image/png' : 'image/jpeg').header('Cache-Control', 'max-age=86400');
+  return reply.send(createReadStream(file));
 });
 
 /** Typical render time for a shot like this one, from past takes on this machine. */
@@ -2159,7 +2570,12 @@ app.post('/api/free', async (_req, reply) => {
 const isModelFile = (p: string) => /\.(glb|gltf|obj)$/i.test(p);
 const mediaMime = (p: string) => {
   const ext = extname(p).toLowerCase();
-  return ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.obj': 'model/obj', '.mov': 'video/quicktime' } as Record<string, string>)[ext] ?? 'video/mp4';
+  return ({
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp',
+    '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.obj': 'model/obj',
+    '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.flac': 'audio/flac', '.ogg': 'audio/ogg',
+  } as Record<string, string>)[ext] ?? 'video/mp4';
 };
 
 /**
@@ -2192,10 +2608,10 @@ for (const side of ['turntable', 'subject'] as const) app.get(`/api/takes/:id/${
 app.get('/api/media/:id', async (req, reply) => {
   const t = takes.get(Number((req.params as any).id));
   if (!t?.output_path) return reply.code(404).send({ error: 'not found' });
-  const alpha = (req.query as any).alpha ? besideOutput(t.output_path, JSON.parse(t.settings).alphaPath as string | undefined) : undefined;
+  const alpha = (req.query as any).alpha ? besideOutput(t.output_path, safeSettings(t).alphaPath as string | undefined) : undefined;
   if ((req.query as any).alpha && !alpha) return reply.code(404).send({ error: 'this take has no alpha version' });
   const path = alpha ?? t.output_path;
-  // The file lives outside OpenField, in a project folder the user owns — it can
+  // The file lives outside Morpheus, in a project folder the user owns — it can
   // be moved or deleted behind our back. Say so instead of throwing a 500.
   if (!existsSync(path)) return reply.code(410).send({ error: `file no longer on disk: ${path}` });
   const size = statSync(path).size;
@@ -2278,8 +2694,8 @@ if (config.serveStatic) {
 await app.listen({ port: config.port, host: config.host });
 console.log(
   config.serveStatic
-    ? `OpenField on http://${config.host}:${config.port}`
-    : `OpenField server on http://${config.host}:${config.port} (UI: http://localhost:${config.uiPort} via vite)`
+    ? `Morpheus on http://${config.host}:${config.port}`
+    : `Morpheus server on http://${config.host}:${config.port} (UI: http://localhost:${config.uiPort} via vite)`
 );
 if (config.judge.on) console.log(`Judge mode: sign-in required, ${config.judge.cap} renders a day, draft limits on.`);
 console.log(`ComfyUI: ${config.comfyUrl} · Comfy API v2: ${config.comfyBaseUrl}`);
@@ -2297,5 +2713,5 @@ if (comfy.canLaunchEngine()) {
 } else {
   void eng.ensureProxy().then((up) => { if (up) void reconcile(); });
 }
-process.on('SIGINT', () => { eng.stopProxy(); closePhoneSession(); process.exit(0); });
-process.on('SIGTERM', () => { eng.stopProxy(); closePhoneSession(); process.exit(0); });
+process.on('SIGINT', () => { eng.stopProxy(); closePhoneSession(); closePairSession(); process.exit(0); });
+process.on('SIGTERM', () => { eng.stopProxy(); closePhoneSession(); closePairSession(); process.exit(0); });

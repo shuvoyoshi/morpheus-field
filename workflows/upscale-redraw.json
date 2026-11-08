@@ -81,7 +81,7 @@
       ],
       "frame_rate": 24,
       "loop_count": 0,
-      "filename_prefix": "OpenField_UP",
+      "filename_prefix": "Morpheus_UP",
       "format": "video/h264-mp4",
       "pingpong": false,
       "save_output": true

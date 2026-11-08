@@ -1,5 +1,5 @@
 /**
- * Model installer — downloads the weights OpenField's graphs ask for and puts
+ * Model installer — downloads the weights Morpheus's graphs ask for and puts
  * them where ComfyUI looks.
  *
  * Reads server/models.ts, the same manifest the app's preflight uses, so what
@@ -121,14 +121,13 @@ function packsOf(bundles: Bundle[]): { pack: string; url: string; bundles: strin
 
 async function list(): Promise<void> {
   const check = await installedCheck();
-  console.log(`\n${c.bold('OpenField model bundles')}`);
+  console.log(`\n${c.bold('Morpheus model bundles')}`);
   console.log(c.dim(`checked against ${check.source}\n`));
   for (const b of BUNDLES) {
     const missing = b.files.filter((f) => !check.has(f));
     const state = missing.length === 0 ? c.ok(' OK  ') : c.bad('MISS ');
     console.log(`${state} ${c.bold(b.id.padEnd(10))} ${b.label}  ${c.dim(`${bundleGb(b)} GB${b.optional ? ' · optional' : ''}`)}`);
-    if (b.licenseWarning) console.log(`       ${c.warn(b.licenseWarning)}`);
-    for (const f of missing) console.log(c.dim(`       missing  models/${f.dir}/${f.file}${f.override ? `  (set by ${f.override})` : ''}`));
+    for (const f of missing) console.log(c.dim(`       missing  models/${f.dir}/${f.file}${f.override ? `  (set by ${f.override})` : f.manual ? '  (manual — put it there yourself)' : ''}`));
     for (const n of packsOf([b])) console.log(c.dim(`       needs custom nodes: ${n.pack}  ${n.url}`));
   }
   console.log('');
@@ -184,30 +183,29 @@ async function main(): Promise<void> {
   // LoRA); fetch each file once.
   const wanted = [...new Map(bundles.flatMap((b) => b.files).map((f) => [`${f.dir}/${f.file}`, f])).values()];
   const absent = wanted.filter((f) => !check.has(f));
-  // A file set by an OPENFIELD_LTX25_* variable has no download source here.
-  const configured = absent.filter((f) => f.override);
-  const todo = absent.filter((f) => !f.override);
+  // A file set by an OPENFIELD_LTX25_* variable, or a manual file, has no download source here.
+  const notDownloadable = absent.filter((f) => f.override || f.manual);
+  const todo = absent.filter((f) => !f.override && !f.manual);
   const skipped = wanted.length - absent.length;
 
-  console.log(`\n${c.bold('OpenField models')} → ${DEST}`);
+  console.log(`\n${c.bold('Morpheus models')} → ${DEST}`);
   console.log(`Bundles: ${bundles.map((b) => b.id).join(', ')}`);
   console.log(c.dim(`Already-installed check: ${check.source}`));
   if (skipped) console.log(c.dim(`${skipped} file(s) already present, skipping.`));
 
-  for (const b of bundles) {
-    if (b.licenseWarning) console.log(`\n${c.warn(`[${b.id}] ${b.licenseWarning}`)}`);
-  }
   for (const n of packsOf(bundles)) {
     console.log(c.warn(`[${n.bundles.join(', ')}] also needs the ${n.pack} custom nodes: ${n.url}`));
   }
 
-  for (const f of configured) {
-    console.log(c.warn(`Not found: models/${f.dir}/${f.file}, set by ${f.override}. It is not downloaded; put it there, or fix the name in .env.`));
+  for (const f of notDownloadable) {
+    console.log(c.warn(f.override
+      ? `Not found: models/${f.dir}/${f.file}, set by ${f.override}. It is not downloaded; put it there, or fix the name in .env.`
+      : `Not found: models/${f.dir}/${f.file}. It is a manual file — put it there yourself; the installer does not download it.`));
   }
 
   if (!todo.length) {
-    if (configured.length) {
-      console.log(c.bad(`\nNothing to download, but ${configured.length} configured file(s) are missing (above).\n`));
+    if (notDownloadable.length) {
+      console.log(c.bad(`\nNothing to download, but ${notDownloadable.length} non-downloadable file(s) are missing (above).\n`));
       process.exit(1);
     }
     console.log(c.ok('\nNothing to download — every file for these bundles is already in place.\n'));
@@ -231,7 +229,7 @@ async function main(): Promise<void> {
     console.log(c.bad(`\nDownloads done, but ${configured.length} configured file(s) are still missing (listed before the downloads).\n`));
     process.exit(1);
   }
-  console.log(c.ok(`\nDone. Restart ComfyUI so it rescans its model folders, then re-check in OpenField.\n`));
+  console.log(c.ok(`\nDone. Restart ComfyUI so it rescans its model folders, then re-check in Morpheus.\n`));
 }
 
 await main();

@@ -43,7 +43,7 @@ export default function MirrorPage() {
   useEffect(() => {
     if (!fromTake) return;
     let live = true;
-    takeAsInput(fromTake, `take_${fromTake}.mp4`)
+    takeAsInput(fromTake)
       .then(async (token) => {
         const url = inputUrl(token);
         const m = await probeClip(url);

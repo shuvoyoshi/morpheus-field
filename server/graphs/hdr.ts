@@ -1,7 +1,7 @@
 /**
  * Finish in HDR: LTX-2.5 SDR-to-HDR IC-LoRA. A port of Lightricks' flattened
  * SDR-to-HDR template (ComfyUI-LTXVideo, verified here 10/3 on the int8
- * transformer), driven by OpenField's own params.
+ * transformer), driven by Morpheus's own params.
  *
  *   SDR clip -> ACEScct working space -> 32-aligned -> IC-LoRA guide at frame 0
  *   -> one distilled pass from fixed scene embeddings (no text encoder)
@@ -17,7 +17,7 @@
  * frame.
  *
  * The EXRs and the HLG file are written by their nodes into ComfyUI's output
- * folder under `openfield/hdr/<tag>_*`; the server collects them from there.
+ * folder under `morpheus/hdr/<tag>_*`; the server collects them from there.
  * The template's bypassed LTXVImgToVideoInplace (a no-op) is left out.
  */
 import { ltx25Files } from './ltxfiles.js';
@@ -39,15 +39,15 @@ export interface HdrParams {
   /** Mux the source's sound into the HLG master and the preview. */
   withAudio?: boolean;
   seed: number;
-  /** Folder names under ComfyUI's output: `openfield/hdr/<tag>_exr` etc. */
+  /** Folder names under ComfyUI's output: `morpheus/hdr/<tag>_exr` etc. */
   tag: string;
 }
 
 export const hdrPaths = (tag: string) => ({
-  exrDir: `openfield/hdr/${tag}_exr`,
+  exrDir: `morpheus/hdr/${tag}_exr`,
   exrPrefix: 'frame',
-  hlgPrefix: `openfield/hdr/${tag}_hlg`,
-  previewPrefix: `openfield/hdr/${tag}_preview`,
+  hlgPrefix: `morpheus/hdr/${tag}_hlg`,
+  previewPrefix: `morpheus/hdr/${tag}_preview`,
 });
 
 export function buildHdrGraph(p: HdrParams): Record<string, unknown> {

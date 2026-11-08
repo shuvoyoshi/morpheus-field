@@ -467,7 +467,7 @@
         "final",
         0
       ],
-      "filename_prefix": "openfield/object"
+      "filename_prefix": "morpheus/object"
     }
   },
   "yaw0": {
@@ -2138,7 +2138,7 @@
         "ttv",
         0
       ],
-      "filename_prefix": "openfield/object_turntable",
+      "filename_prefix": "morpheus/object_turntable",
       "format": "auto",
       "codec": "auto"
     }

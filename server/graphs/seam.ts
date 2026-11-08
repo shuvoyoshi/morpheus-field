@@ -51,7 +51,7 @@ export interface SeamTrimParams {
 export function buildSeamTrimGraph(p: SeamTrimParams): Graph {
   return {
     src: loadClip(p.video, p.frames, p.start),
-    out: saveClip(['src', 0], p.fps ?? LTX25_FPS, 'openfield/seam_trim'),
+    out: saveClip(['src', 0], p.fps ?? LTX25_FPS, 'morpheus/seam_trim'),
   };
 }
 
@@ -103,7 +103,7 @@ export function buildSeamBridgeGraph(p: SeamBridgeParams): Graph {
     // The bridge's own first and last frames re-render the anchors; drop them.
     inner: { class_type: 'ImageFromBatch', inputs: { image: ['dv', 0], batch_index: 1, length: inner } },
     join: { class_type: 'BatchImagesNode', inputs: { 'images.image0': ['body', 0], 'images.image1': ['inner', 0] } },
-    out: saveClip(['join', 0], fps, 'openfield/seam_bridge'),
+    out: saveClip(['join', 0], fps, 'morpheus/seam_bridge'),
   });
   return g;
 }
@@ -190,7 +190,7 @@ export function buildSeamRegenGraph(p: SeamRegenParams): Graph {
     backHead: { class_type: 'ImageFromBatch', inputs: { image: ['dv', 0], batch_index: n - p.h, length: p.h } },
     backTail: { class_type: 'ImageFromBatch', inputs: { image: ['dv', 0], batch_index: 0, length: n - p.h } },
     join: { class_type: 'BatchImagesNode', inputs: { 'images.image0': ['backHead', 0], 'images.image1': ['backTail', 0] } },
-    out: saveClip(['join', 0], fps, 'openfield/seam_regen'),
+    out: saveClip(['join', 0], fps, 'morpheus/seam_regen'),
   };
 }
 

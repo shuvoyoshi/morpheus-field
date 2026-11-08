@@ -32,6 +32,7 @@ const LOADER: Partial<Record<ModelFile['dir'], [string, string]>> = {
  */
 const FOLDER: Partial<Record<ModelFile['dir'], string>> = {
   SEEDVR2: 'seedvr2',
+  'Qwen3-TTS': 'Qwen3-TTS',
 };
 
 export interface BundleStatus {
@@ -39,7 +40,6 @@ export interface BundleStatus {
   label: string;
   purpose: string;
   license: string;
-  licenseWarning?: string;
   optional: boolean;
   gb: number;
   ready: boolean;
@@ -61,7 +61,9 @@ async function seenByFolder(): Promise<Record<string, Set<string>>> {
   const lists = await Promise.all(
     dirs.map(async (d) => {
       const folder = FOLDER[d];
-      return new Set(folder ? await listModelFolder(folder) : await comboOptions(...LOADER[d]!));
+      const files = folder ? await listModelFolder(folder) : await comboOptions(...LOADER[d]!);
+      // Folder listings are raw paths; Windows answers with backslashes.
+      return new Set(files.map((f) => f.replace(/\\/g, '/')));
     })
   );
   return Object.fromEntries(dirs.map((d, i) => [d, lists[i]]));
@@ -77,7 +79,6 @@ export function statusFor(b: Bundle, seen: Record<string, Set<string>>, nodes: S
     label: b.label,
     purpose: b.purpose,
     license: b.license,
-    licenseWarning: b.licenseWarning,
     optional: !!b.optional,
     gb: bundleGb(b),
     ready: missingFiles.length === 0 && missingNodes.length === 0,
@@ -117,17 +118,17 @@ export function reasonFor(all: BundleStatus[], bundleIds: string[]): string | nu
     const st = all.find((s) => s.id === id);
     const b = bundle(id);
     if (!st || !b || st.ready) continue;
-    const files = st.missingFiles.map((f) => `${f.file} (models/${f.dir}/${f.override ? `, set by ${f.override}` : ''})`);
+    const files = st.missingFiles.map((f) => `${f.file} (models/${f.dir}/${f.override ? `, set by ${f.override}` : f.manual ? ', manual — put it there yourself' : ''})`);
     const packs = st.missingNodes.map((n) => `${n.pack} custom nodes`);
     problems.push(`${b.label} is missing: ${[...files, ...packs].join(', ')}`);
-    if (st.missingFiles.some((f) => f.override)) configured = true;
-    if (st.missingNodes.length || st.missingFiles.some((f) => !f.override)) fetchable = true;
+    if (st.missingFiles.some((f) => f.override || f.manual)) configured = true;
+    if (st.missingNodes.length || st.missingFiles.some((f) => !f.override && !f.manual)) fetchable = true;
   }
   if (!problems.length) return null;
   const hints = [
     ...(fetchable ? ['Run "npm run models" to fetch them, or see docs/MODELS.md.'] : []),
-    // A configured file is never downloaded; say what has to match instead.
-    ...(configured ? ['A file set in .env must sit in that folder and match the name ComfyUI lists for it exactly, subfolder included.'] : []),
+    // A configured or manual file is never downloaded; say what has to match instead.
+    ...(configured ? ['These files are not downloaded by the installer: put them in the folder yourself and match the name ComfyUI lists for them exactly, subfolder included.'] : []),
   ];
   return `${problems.join('; ')}. ${hints.join(' ')}`;
 }

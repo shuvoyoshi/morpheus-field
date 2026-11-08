@@ -25,7 +25,7 @@ export const VIDEO_MODELS: VideoModel[] = [
     start: true, end: true, audio: true, durations: [3, 5, 8, 10], license: 'LTX community license',
   },
   {
-    id: 'h3', label: 'MiniMax H3', vendor: 'MiniMax', note: 'Strong direction-following and dialogue. Opt-in.',
+    id: 'h3', label: 'MiniMax H3', vendor: 'MiniMax', note: 'Text, image, first + last frame, or references — all on the all-in-one H3 checkpoint. Strong direction-following and dialogue. Turbo (8-step) or max (20-step). Opt-in.',
     start: true, end: true, audio: true, durations: [5, 8, 10], license: 'H3 community license',
     warn: 'H3 license excludes the US, EU, UK and South Korea.',
   },
@@ -174,14 +174,11 @@ export interface AppDef {
   icon: string;
   hue: number;
   cat: 'create' | 'direct' | 'transform' | 'finish';
-  badge?: 'new' | 'soon' | 'top';
   /** Motion preset whose rendered clip stands in as this app's cover art. */
   cover: string;
   /** A clip of the app's own output under public/, used as the cover in place of the preset clip. */
   clip?: string;
 }
-
-export const badgeLabel = (b: AppDef['badge']) => (b === 'top' ? 'Top' : b === 'new' ? 'New' : b === 'soon' ? 'Soon' : '');
 
 export const APP_CATS = [
   { id: 'all', label: 'All' },
@@ -192,15 +189,15 @@ export const APP_CATS = [
 ] as const;
 
 export const APPS: AppDef[] = [
-  { id: 'video', name: 'Video', blurb: 'Turn text or an image into video, with camera and effect presets.', route: '/video', icon: 'video', hue: 32, cat: 'create', badge: 'top', cover: 'embers', clip: '/apps/video.mp4' },
+  { id: 'video', name: 'Video', blurb: 'Turn text or an image into video, with camera and effect presets.', route: '/video', icon: 'video', hue: 32, cat: 'create', cover: 'embers', clip: '/apps/video.mp4' },
   { id: 'image', name: 'Image', blurb: 'Make stills from a prompt and animate any of them in one click.', route: '/image', icon: 'image', hue: 200, cat: 'create', cover: 'golden', clip: '/apps/image.mp4' },
   { id: 'loop', name: 'Seamless Loop', blurb: 'Turn one image into a loop whose first and last frames match.', route: '/video?mode=loop', icon: 'loop', hue: 160, cat: 'create', cover: 'dreamlike', clip: '/apps/loop.mp4' },
   { id: 'cast', name: 'Cast', blurb: 'Save a character, prop or place once and @mention it in any prompt.', route: '/cast', icon: 'person', hue: 28, cat: 'direct', cover: 'handheld', clip: '/apps/cast.mp4' },
-  { id: 'director', name: 'Director', blurb: 'Set genre, camera, light, film stock, era and speed ramp, and they compile into the shot.', route: '/director', icon: 'film', hue: 18, cat: 'direct', badge: 'new', cover: 'noir', clip: '/apps/director.mp4' },
-  { id: 'stage', name: 'Stage', blurb: 'Block a shot in 3D and render it as a finished shot that moves like the blocking.', route: '/stage', icon: 'camera', hue: 36, cat: 'direct', badge: 'new', cover: 'push-in', clip: '/apps/stage.mp4' },
+  { id: 'director', name: 'Director', blurb: 'Set genre, camera, light, film stock, era and speed ramp, and they compile into the shot.', route: '/director', icon: 'film', hue: 18, cat: 'direct', cover: 'noir', clip: '/apps/director.mp4' },
+  { id: 'stage', name: 'Stage', blurb: 'Block a shot in 3D and render it as a finished shot that moves like the blocking.', route: '/stage', icon: 'camera', hue: 36, cat: 'direct', cover: 'push-in', clip: '/apps/stage.mp4' },
   { id: 'scene', name: 'Scene', blurb: 'Write a scene and get it planned, shot and cut into one take.', route: '/director?mode=scene', icon: 'grid', hue: 28, cat: 'direct', cover: 'crane-up', clip: '/apps/scene.mp4' },
-  { id: 'effects', name: 'Effects', blurb: 'Apply a one-click effect to a clip or a still, from cutout and flood to pop and inflate.', route: '/effects', icon: 'sparkle', hue: 300, cat: 'transform', badge: 'new', cover: 'shatter', clip: '/apps/effects.mp4' },
-  { id: 'mirror', name: 'Mirror', blurb: 'Film a move on your phone and put that motion onto any character.', route: '/mirror', icon: 'mirror', hue: 280, cat: 'transform', badge: 'new', cover: 'snorricam', clip: '/apps/mirror.mp4' },
+  { id: 'effects', name: 'Effects', blurb: 'Apply a one-click effect to a clip or a still, from cutout and flood to pop and inflate.', route: '/effects', icon: 'sparkle', hue: 300, cat: 'transform', cover: 'shatter', clip: '/apps/effects.mp4' },
+  { id: 'mirror', name: 'Mirror', blurb: 'Film a move on your phone and put that motion onto any character.', route: '/mirror', icon: 'mirror', hue: 280, cat: 'transform', cover: 'snorricam', clip: '/apps/mirror.mp4' },
   { id: 'reshoot', name: 'Reshoot', blurb: 'Re-aim the camera on an existing clip: orbit, rise or push in after the fact.', route: '/reshoot', icon: 'orbit', hue: 230, cat: 'transform', cover: 'freeze-orbit', clip: '/apps/reshoot.mp4' },
   { id: 'edit', name: 'Edit', blurb: 'Change a still with a sentence, and paint a mask to keep the rest exactly.', route: '/edit', icon: 'wand', hue: 250, cat: 'transform', cover: 'ink-bloom' },
   { id: 'angle', name: 'New angle', blurb: 'See the same scene from new camera positions, as a grid of angles.', route: '/edit?app=angle', icon: 'orbit', hue: 210, cat: 'transform', cover: 'orbit-right' },
@@ -216,7 +213,29 @@ export const APPS: AppDef[] = [
   { id: 'speak', name: 'Speak', blurb: 'Turn a face and a voice track into a talking shot that follows the audio.', route: '/speak', icon: 'person', hue: 12, cat: 'transform', cover: 'handheld' },
   { id: 'object', name: 'Object', blurb: 'Turn one still into a textured 3D model you can spin, download or place in Stage.', route: '/object', icon: 'cube', hue: 30, cat: 'create', cover: 'turntable', clip: '/apps/object.mp4' },
   { id: 'sound', name: 'Add sound', blurb: 'Generate a soundtrack for a silent take and keep the picture as it is.', route: '/speak?mode=sound', icon: 'audio', hue: 190, cat: 'create', cover: 'storm' },
+  { id: 'audio', name: 'Audio', blurb: 'Write lyrics and tags and get a full song from ACE-Step 1.5, or have Qwen3-TTS say anything in a voice you describe.', route: '/audio', icon: 'audio', hue: 175, cat: 'create', cover: 'golden' },
+  { id: 'agent', name: 'Agent', blurb: 'Chat with a model that plans and drives the whole studio, chaining renders until your ask is done.', route: '/agent', icon: 'nodes', hue: 335, cat: 'direct', cover: 'dolly-zoom' },
 ];
+
+/** ACE-Step's 24 keys, in the exact "Name major/minor" form the encoder lists. */
+export const ACE_KEYS = [
+  'C major', 'G major', 'D major', 'A major', 'E major', 'B major', 'F# major',
+  'F major', 'C# major', 'G# major', 'D# major', 'A# major',
+  'C minor', 'G minor', 'D minor', 'A minor', 'E minor', 'B minor', 'F# minor',
+  'F minor', 'C# minor', 'G# minor', 'D# minor', 'A# minor',
+];
+/** ACE-Step language codes (the encoder's list, a practical subset). */
+export const ACE_LANGUAGES = [
+  { id: 'en', label: 'English' }, { id: 'zh', label: 'Chinese' }, { id: 'ja', label: 'Japanese' },
+  { id: 'ko', label: 'Korean' }, { id: 'es', label: 'Spanish' }, { id: 'fr', label: 'French' },
+  { id: 'de', label: 'German' }, { id: 'it', label: 'Italian' }, { id: 'pt', label: 'Portuguese' },
+  { id: 'ru', label: 'Russian' },
+];
+export const ACE_TIMESIGS = [
+  { id: '4', label: '4/4' }, { id: '3', label: '3/4' }, { id: '2', label: '2/4' }, { id: '6', label: '6/8' },
+];
+/** Qwen3VoiceDesign's language list. */
+export const TTS_LANGUAGES = ['Auto', 'English', 'Chinese', 'Japanese', 'Korean', 'German', 'French', 'Russian', 'Portuguese', 'Spanish', 'Italian'];
 
 /** Ready-made setups. Recreate loads one into its app via URL params. */
 export interface Recipe { id: string; name: string; preset: string; prompt: string; route: string }

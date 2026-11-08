@@ -1,5 +1,5 @@
 /**
- * Judge mode: a password-gated, rate-capped preview of OpenField for contest
+ * Judge mode: a password-gated, rate-capped preview of Morpheus for contest
  * judges, meant for a rented GPU box (deploy/runpod) that is only up during
  * judging. Off unless OPENFIELD_JUDGE=1.
  *
@@ -9,7 +9,10 @@
  *  - login rate limits, per address and overall;
  *  - a daily render cap across all apps (429 when it is spent);
  *  - draft-sized limits on every render request, and the machine-changing
- *    routes (Setup writes, project folders, phone listener, deletes) refused.
+ *    routes (Setup writes including the agent's LLM config, project folders,
+ *    phone listener, deletes) refused. The agent itself stays usable: its
+ *    renders go through the capped render routes, and its conversation
+ *    history is ordinary chat state.
  *
  * The pure parts (cookie, limiter, cap, body limits) take their inputs as
  * arguments so scripts/test-judge.ts can check them without a GPU.
@@ -230,12 +233,19 @@ export const RENDER_ROUTES = new Set([
   'POST /api/cast/hero',
 ]);
 
-/** Routes that change the machine rather than make a render. */
+/** Routes that change the machine rather than make a render. The agent's
+ *  conversation routes are deliberately not here: a judge can chat with the
+ *  agent and keep the history; what it can steer is the LLM config write
+ *  (refused) and the renders (capped, like every other app). */
 export const BLOCKED_ROUTES = new Set([
   'PUT /api/settings',
+  'PUT /api/agent/config',
   'POST /api/projects',
   'POST /api/phone/start',
+  'POST /api/phoneapp/start',
   'POST /api/engine/start',
+  'POST /api/engine/stop',
+  'PUT /api/engine/config',
   'POST /api/free',
   'POST /api/queue/clear',
   'POST /api/stop',
@@ -339,7 +349,7 @@ const LOGIN_PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>OpenField judge preview</title>
+<title>Morpheus judge preview</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #000; color: #f3eadf;
@@ -355,7 +365,7 @@ const LOGIN_PAGE = `<!doctype html>
 </head>
 <body>
 <form id="f">
-  <h1>OpenField judge preview</h1>
+  <h1>Morpheus judge preview</h1>
   <p>A shared preview on a rented GPU. Enter the password from the submission.</p>
   <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required autofocus>
   <button id="go" type="submit">Enter</button>

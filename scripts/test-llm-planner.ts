@@ -56,13 +56,16 @@ const server = createServer((req, res) => {
 });
 await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
-// scene.ts reads these when it loads; empty values keep this machine's .env out.
+// The LLM config falls back to these env vars (a value saved in the app wins);
+// empty values keep this machine's .env out of the test.
+const PORT = (server.address() as AddressInfo).port;
 Object.assign(process.env, {
-  OPENFIELD_LLM_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
+  OPENFIELD_LLM_URL: `http://127.0.0.1:${PORT}/v1`,
   OPENFIELD_LLM_MODEL: '', OPENFIELD_LLM_KEY: '', OPENFIELD_LLM_REASONING: '',
   OPENFIELD_DATA: join(tmpdir(), 'openfield-test-llm-planner'),
 });
-const { getPlan, startPlan } = await import('../server/scene.js');
+const { getPlan, plannerReasoningOverride, startPlan } = await import('../server/scene.js');
+const { setLlmConfig } = await import('../server/llmConfig.js');
 
 async function plan(think = false) {
   bodies.length = 0;
@@ -138,7 +141,36 @@ await check('a server that lists several models is not guessed at: set OPENFIELD
   const p = await plan();
   assert.equal(p.planner, 'split');
   assert.equal(bodies.length, 0, 'no chat request');
-  assert.ok(p.notes.some((n) => /lists 2 models; set OPENFIELD_LLM_MODEL/.test(n)), p.notes.join(' | '));
+  assert.ok(p.notes.some((n) => /lists 2 models; set a model in Setup or OPENFIELD_LLM_MODEL/.test(n)), p.notes.join(' | '));
+});
+
+// --- a value saved in the app (llmConfig) wins over the env vars ---
+
+await check('a saved LLM URL is used even when the env names a working one', async () => {
+  setLlmConfig({ url: 'http://127.0.0.1:9/v1', model: null, key: null, reasoning: null });
+  const p = await plan();
+  assert.equal(p.planner, 'split', 'the saved (dead) URL was tried; the working env URL must not have been used instead');
+  assert.ok(p.notes.some((n) => /^llm:/.test(n)), p.notes.join(' | '));
+  setLlmConfig({ url: null });
+});
+
+await check('a saved model and reasoning override the env (and the Think first switch)', async () => {
+  mode = {};
+  setLlmConfig({ url: `http://127.0.0.1:${PORT}/v1`, model: 'saved-model', reasoning: 'high' });
+  const p = await plan(false);
+  assert.equal(p.planner, 'llm');
+  assert.equal(bodies.at(-1)!.model, 'saved-model', 'the saved model is asked');
+  assert.equal(bodies.at(-1)!.reasoning_effort, 'high', 'the saved reasoning wins over the switch');
+  assert.equal(plannerReasoningOverride(), 'high', 'the UI override reflects the saved value');
+});
+
+await check('clearing the saved config falls back to the env again', async () => {
+  mode = {};
+  setLlmConfig({ url: null, model: null, reasoning: null });
+  const p = await plan();
+  assert.equal(p.planner, 'llm');
+  assert.equal(bodies.at(-1)!.model, 'test-model', 'env fallback: the server lists exactly one model');
+  assert.equal(plannerReasoningOverride(), null);
 });
 
 server.close();

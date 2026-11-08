@@ -1,5 +1,5 @@
 /**
- * Thin HTTP client for the OpenField server (:3161), plus the local-file side
+ * Thin HTTP client for the Morpheus server (:3161), plus the local-file side
  * of uploads: read a path, measure it, POST it to /api/upload as a data URL.
  * No generation logic lives here; the server owns all of it.
  */
@@ -45,7 +45,7 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     r = await fetch(`${BASE}${path}`, init && { ...init, headers });
   } catch (e) {
-    throw new ApiError(`OpenField is not answering at ${BASE} (${e instanceof Error ? e.message : e}). Start it with \`npm run dev\`, or set OPENFIELD_URL.`);
+    throw new ApiError(`Morpheus is not answering at ${BASE} (${e instanceof Error ? e.message : e}). Start it with \`npm run dev\`, or set OPENFIELD_URL.`);
   }
   const text = await r.text();
   let d: any;
@@ -61,10 +61,12 @@ export const api = {
   status: () => j<Record<string, any>>('/api/status'),
   /** Machine-wide settings: renderTier.tier is the default render size for every video tool. */
   settings: () => j<{ renderTier: { tier: '480p' | '720p' | '1080p'; source: string; auto: string } }>('/api/settings'),
-  preflight: () => j<{ bundles: { id: string; label: string; ready: boolean; optional: boolean; licenseWarning?: string; missingFiles: unknown[]; missingNodes: unknown[] }[] }>('/api/preflight'),
+  preflight: () => j<{ bundles: { id: string; label: string; ready: boolean; optional: boolean; missingFiles: unknown[]; missingNodes: unknown[] }[] }>('/api/preflight'),
   takes: (project?: number) => j<Take[]>(`/api/takes${project ? `?project=${project}` : ''}`),
   generate: (body: Record<string, unknown>) => post<{ takeId: number; takeIds: number[] }>('/api/generate', body),
   upres: (id: number, opts: { model?: string; rife?: boolean }) => post<{ takeId: number }>(`/api/takes/${id}/upres`, opts),
+  critique: (id: number, opts: { request: string; verify_words?: boolean }) =>
+    post<{ kind: string; scores: unknown; verdict: string; fixes: string[]; used_image: boolean; frames: number; word_verify?: string }>(`/api/takes/${id}/critique`, opts),
   cancelTake: (id: number) => post<{ ok: true }>(`/api/takes/${id}/cancel`),
   clearQueue: () => post<{ ok: true }>('/api/queue/clear'),
   upload: (name: string, dataUrl: string) => post<{ name: string }>('/api/upload', { name, dataUrl }),
@@ -106,7 +108,7 @@ export function settingsOf(t: Take): Record<string, any> {
 export const mediaUrl = (id: number) => `${BASE}/api/media/${id}`;
 
 async function fetchBytes(path: string): Promise<{ data: Buffer; mime: string }> {
-  const r = await fetch(`${BASE}${path}`).catch((e) => { throw new ApiError(`OpenField is not answering at ${BASE}: ${e}`); });
+  const r = await fetch(`${BASE}${path}`).catch((e) => { throw new ApiError(`Morpheus is not answering at ${BASE}: ${e}`); });
   if (!r.ok) throw new ApiError(`GET ${path} -> ${r.status}`);
   return { data: Buffer.from(await r.arrayBuffer()), mime: (r.headers.get('content-type') || 'application/octet-stream').split(';')[0] };
 }

@@ -1,10 +1,10 @@
-/** OpenField shell: top bar + routed page. */
+/** Morpheus shell: top bar + routed page. */
 import { lazy, Suspense, useEffect } from 'react';
-import { APPS, badgeLabel } from './catalog';
+import { APPS, type AppDef } from './catalog';
 import { linkProps, useRoute } from './router';
 import { startLive, useStore } from './store';
 import { useGlobalDrop } from './drop';
-import { GpuChip, JudgeBanner, Logo, Toast } from './ui';
+import { GpuChip, Icon, JudgeBanner, Logo, Toast } from './ui';
 import VideoPage from './pages/Video';
 import ImagePage from './pages/Image';
 import DirectorPage from './pages/Director';
@@ -15,29 +15,36 @@ import UpscalePage from './pages/Upscale';
 import ExtendPage from './pages/Extend';
 import SpeakPage from './pages/Speak';
 import EditPage from './pages/Edit';
+import AudioPage from './pages/Audio';
 import CastPage from './pages/Cast';
 import CutoutPage from './pages/Cutout';
+import AgentPage from './pages/Agent';
 // three.js is only needed by Stage and Object: load them when opened, not on every page
 const StagePage = lazy(() => import('./pages/Stage'));
 const ObjectPage = lazy(() => import('./pages/Object'));
 import { Apps, Explore, Library, Soon } from './pages/Home';
 import Setup from './pages/Setup';
+import Player from './Player';
+import { PairChip } from './Phone';
 
 const SECTIONS = [
-  { to: '/', label: 'Explore' },
-  { to: '/image', label: 'Image' },
-  { to: '/edit', label: 'Edit' },
-  { to: '/video', label: 'Video' },
-  { to: '/apps', label: 'Apps' },
-  { to: '/library', label: 'Library' },
+  { to: '/image', label: 'Image', icon: 'image' },
+  { to: '/edit', label: 'Edit', icon: 'wand' },
+  { to: '/video', label: 'Video', icon: 'video' },
+  { to: '/audio', label: 'Audio', icon: 'audio' },
+  { to: '/agent', label: 'Agent', icon: 'nodes' },
+  { to: '/library', label: 'Library', icon: 'film' },
+  { to: '/apps', label: 'Apps', icon: 'grid' },
 ];
-const APP_LINKS = APPS.filter((a) => ['director', 'stage', 'loop', 'mirror', 'reshoot', 'upscale'].includes(a.id));
 
 export default function App() {
   const { path, params } = useRoute();
   useEffect(() => { startLive(); }, []);
   const drop = useGlobalDrop();
   const judge = useStore((s) => !!s.status?.judge);
+  // Apps the user pinned to the header, in the order they pinned them.
+  const favorites = useStore((s) => s.favorites);
+  const favApps = favorites.map((id) => APPS.find((a) => a.id === id)).filter((a): a is AppDef => !!a);
 
   const page = (() => {
     if (path === '/image') return <ImagePage />;
@@ -50,8 +57,10 @@ export default function App() {
     if (path === '/extend') return <ExtendPage />;
     if (path === '/speak') return <SpeakPage />;
     if (path === '/edit') return <EditPage />;
+    if (path === '/audio') return <AudioPage />;
     if (path === '/cast') return <CastPage />;
     if (path === '/cutout') return <CutoutPage />;
+    if (path === '/agent' || /^\/agent\/c\/\d+$/.test(path)) return <AgentPage />;
     if (path === '/stage') return <StagePage />;
     if (path === '/object') return <ObjectPage />;
     if (path === '/apps') return <Apps />;
@@ -63,12 +72,14 @@ export default function App() {
   // the tab says where you are
   useEffect(() => {
     const name = path === '/' ? 'Explore' : path === '/setup' ? 'Setup' : path === '/library' ? 'Library'
+      : (path === '/agent' || /^\/agent\/c\/\d+$/.test(path)) ? 'Agent'
       : APPS.find((a) => a.route.split('?')[0] === path)?.name ?? SECTIONS.find((s) => s.to === path)?.label;
-    document.title = name ? `${name} · OpenField` : 'OpenField';
+    document.title = name ? `${name} · Morpheus` : 'Morpheus';
   }, [path]);
 
   const isActive = (to: string) => {
     if (to === '/') return path === '/';
+    if (to === '/agent') return path === '/agent' || /^\/agent\/c\/\d+$/.test(path);
     const [p, q] = to.split('?');
     if (p !== path) return false;
     if (!q) return !(path === '/video' && params.get('mode') === 'loop');
@@ -77,26 +88,30 @@ export default function App() {
 
   return (
     <div className={`app ${judge ? 'has-judge' : ''}`}>
-      <header className="topbar">
-        <a className="brand" {...linkProps('/')}><Logo /><span className="brand-word">OpenField</span></a>
+      <header className={`topbar ${path === '/' ? 'on-home' : ''}`}>
+        <a className="brand" {...linkProps('/')}><Logo /><span className="brand-word">M O R P H E U S</span></a>
         <nav className="nav">
-          {SECTIONS.map((s) => <a key={s.to} className={`nav-link ${isActive(s.to) ? 'active' : ''}`} {...linkProps(s.to)}>{s.label}</a>)}
-          <span className="nav-sep" />
-          {APP_LINKS.map((a) => (
-            <a key={a.id} className={`nav-link ${isActive(a.route) ? 'active' : ''}`} {...linkProps(a.route)}>
-              {a.name}{a.badge === 'new' && <span className="badge">{badgeLabel(a.badge)}</span>}
-            </a>
-          ))}
-          <a className={`nav-link nav-setup ${isActive('/setup') ? 'active' : ''}`} {...linkProps('/setup')}>Setup</a>
+          {SECTIONS.map((s) => <a key={s.to} className={`nav-link ${isActive(s.to) ? 'active' : ''}`} {...linkProps(s.to)}><Icon name={s.icon} size={14} />{s.label}</a>)}
+          {favApps.length > 0 && <>
+            <span className="nav-sep" />
+            {favApps.map((a) => (
+              <a key={a.id} className={`nav-link ${isActive(a.route) ? 'active' : ''}`} {...linkProps(a.route)}>
+                <Icon name={a.icon} size={14} />{a.name}
+              </a>
+            ))}
+          </>}
+          <a className={`nav-link nav-setup ${isActive('/setup') ? 'active' : ''}`} {...linkProps('/setup')}><Icon name="cpu" size={14} />Setup</a>
         </nav>
         <div className="topbar-right">
-          <a className="nav-link" {...linkProps('/setup')} title="Models and setup">Setup</a>
+          <a className="nav-link" {...linkProps('/setup')} title="Models and setup"><Icon name="cpu" size={14} />Setup</a>
+          <PairChip />
           <GpuChip />
         </div>
       </header>
       <JudgeBanner />
       <main className="main"><Suspense fallback={null}>{page}</Suspense></main>
       {drop.dragging && drop.label && <div className="drop-veil" aria-hidden><span>{drop.label}</span></div>}
+      <Player />
       <Toast />
     </div>
   );

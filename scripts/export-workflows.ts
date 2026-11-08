@@ -7,7 +7,7 @@
  * Params are representative defaults (720p-class frames, the default render
  * size on a 24 GB card (src/renderTier.ts), the app's own default length,
  * seed 42). Inputs the user would supply are plain placeholder filenames
- * (input_start.png, input_video.mp4 ...) in place of OpenField's asset
+ * (input_start.png, input_video.mp4 ...) in place of Morpheus's asset
  * tokens: put files with those names in ComfyUI's input/ folder, or pick your
  * own in the loader node, then queue. Each file loads by dropping it onto the
  * ComfyUI canvas. Re-run after changing a builder; the output is deterministic.
@@ -39,6 +39,7 @@ import { buildStageLookGraph, buildStageShotGraph, lookEditInstruction, lookProm
 import { lookSize, stageSize } from '../src/stage.js';
 import { buildTrellisGraph } from '../server/graphs/trellis.js';
 import { planBridge, planRegen } from '../server/seam.js';
+import { buildAcestepMusic, buildQwen3Speech } from '../server/graphs/audio.js';
 import { buildCutoutStillGraph, buildCutoutVideoGraph } from '../server/graphs/cutout.js';
 import { buildRestyleGraph, buildSwapGraph } from '../server/graphs/restyle.js';
 import { clearLtx25Overrides } from '../server/graphs/ltxfiles.js';
@@ -112,7 +113,7 @@ const effect = (id: string): Entry => {
       ...(fx.input === 'clip'
         ? { icLora: { ...lora, video: IN.video } }
         : { loras: [lora], startImage: IN.start, endImage: fx.loopable ? IN.start : undefined }),
-      filenamePrefix: `openfield/effect_${fx.id}`,
+      filenamePrefix: `morpheus/effect_${fx.id}`,
     }),
   };
 };
@@ -363,6 +364,30 @@ export const ENTRIES: Entry[] = [
     build: () => buildSoundGraph({ prompt: SOUND_PROMPT, sourceVideo: IN.video, sourceFrames: 120, width: 768, height: 416, seed: SEED }),
   },
 
+  // ---- Audio: Music (ACE-Step 1.5) and Speech (Qwen3-TTS) ----
+  {
+    file: 'music-turbo', app: 'Audio > Music (ACE-Step 1.5 Turbo, 8 steps)',
+    build: () => buildAcestepMusic({
+      tags: 'late night lo-fi, warm vinyl crackle, soft jazz piano, mellow bass',
+      lyrics: '', model: 'turbo', seconds: 30, key: 'E minor', bpm: 80, timesignature: '4', language: 'en', seed: SEED,
+    }),
+  },
+  {
+    file: 'music-base', app: 'Audio > Music (ACE-Step 1.5 Base, 30 steps)',
+    build: () => buildAcestepMusic({
+      tags: 'late night lo-fi, warm vinyl crackle, soft jazz piano, mellow bass',
+      lyrics: '', model: 'base', seconds: 30, key: 'E minor', bpm: 80, timesignature: '4', language: 'en', seed: SEED,
+    }),
+  },
+  {
+    file: 'speech-qwen3', app: 'Audio > Speech (Qwen3-TTS 1.7B VoiceDesign)',
+    build: () => buildQwen3Speech({
+      text: 'Asta la vista, friend. See you on the other side.',
+      instruct: 'A warm, weathered voice, dry and unhurried, like a western hero shrugging off a long ride.',
+      language: 'Auto', seed: SEED,
+    }),
+  },
+
   // ---- Upscale (832x448 3 s source, the size of a 480p take) ----
   {
     file: 'upscale-sharpen', app: 'Upscale > Sharpen',
@@ -473,7 +498,7 @@ export const ENTRIES: Entry[] = [
   },
 ];
 
-/** Custom node packs, by the node classes OpenField uses from them. Anything
+/** Custom node packs, by the node classes Morpheus uses from them. Anything
  *  not listed here ships with ComfyUI 0.38. */
 const PACKS: Record<string, { pack: string; url: string }> = {
   VHS_LoadVideo: { pack: 'ComfyUI-VideoHelperSuite', url: 'https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite' },
@@ -522,7 +547,7 @@ function inventory(graph: Record<string, unknown>) {
 
 const README_HEAD = `# Workflows
 
-Every OpenField app is a plain ComfyUI workflow. These are those workflows in
+Every Morpheus app is a plain ComfyUI workflow. These are those workflows in
 ComfyUI's API format, written by \`npm run workflows\` from the same graph
 builders in [\`server/graphs/\`](../server/graphs) that the app runs. This file
 is generated with them; edit \`scripts/export-workflows.ts\`, not this file.
@@ -536,7 +561,7 @@ accepts its own UI format that way.
 
 Params are representative defaults (each app's default size and length, seed 42).
 For the exact graph behind one of your renders, use **Download workflow** or
-**Open in ComfyUI** on the take in OpenField's viewer.
+**Open in ComfyUI** on the take in Morpheus's viewer.
 
 `;
 

@@ -361,7 +361,7 @@ export function StillCompare({ take, actions }: { take: Take; actions?: React.Re
           onMouseMove={(e) => { if (e.buttons === 1) set(e); }} onClick={set}>
           <img src={mediaUrl(take.id)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
           {before && (
-            <div style={{ position: 'absolute', inset: 0, clipPath: `inset(0 ${100 - x}% 0 0)`, background: inner ? '#0b0a09' : undefined }}>
+            <div style={{ position: 'absolute', inset: 0, clipPath: `inset(0 ${100 - x}% 0 0)`, background: inner ? '#08090b' : undefined }}>
               <img src={inputUrl(before)} alt="" style={{ position: 'absolute', ...pos, objectFit: 'cover' }} />
             </div>
           )}
@@ -407,7 +407,7 @@ function MaskPainter({ source, onDone, onCancel }: { source: Source; onDone: (to
     if (e.buttons !== 1) { last.current = null; return; }
     const c = canvas.current!.getContext('2d')!;
     const p = at(e);
-    c.strokeStyle = 'rgba(255, 181, 71, 1)';
+    c.strokeStyle = 'rgba(255, 102, 0, 1)';
     c.lineWidth = brush * Math.max(W, H);
     c.lineCap = 'round';
     c.beginPath();

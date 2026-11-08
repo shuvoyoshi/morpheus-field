@@ -12,6 +12,7 @@
  *   Upscale                src/pages/Upscale.tsx   go()
  *   Extend / Transition    src/pages/Extend.tsx    extendBody() / transitionBody()
  *   Speak / Add sound      src/pages/Speak.tsx     speakBody() / soundBody()
+ *   Audio (music, speech)  src/pages/Audio.tsx     go()
  *   Edit + image apps      src/pages/Edit.tsx      go()
  *   Stage                  src/pages/Stage.tsx     go()
  *   Finish in HDR          src/Viewer.tsx          finishHdr()
@@ -58,9 +59,9 @@ export interface VideoOpts {
   castMode?: 'sheet' | 'frame';
   /** Loop tab "Auto-fix the seam" (off by default): try to improve a visible seam on each loop. */
   autoFix?: boolean;
-  /** Your own LTX LoRAs (LTX-2.5 only), as the LoRA chip sends them. */
+  /** Your own LoRAs (LTX-2.5 or MiniMax H3), as the LoRA chip sends them. */
   loras?: LoraPick[];
-  /** H3 turbo preset id (src/presets.ts H3_TURBO), as the Turbo chip sends it. */
+  /** H3 sampling: 'turbo' (8 steps + distill) or '' (20-step max). */
   turbo?: string;
 }
 
@@ -72,8 +73,9 @@ export function videoBody(o: VideoOpts): Body {
   const model = VIDEO_MODELS.find((m) => m.id === o.model) ?? VIDEO_MODELS[0];
   const preset = presetById(o.preset || 'free');
   const end = o.loop ? o.startImage : o.endImage;
-  const needsStart = model.id === 'h3' || !!o.loop;
-  if (needsStart && !o.startImage) throw new Error(o.loop ? 'A loop needs one image.' : `${model.label} needs a start frame.`);
+  // H3 now does text-to-video, so only loop mode requires a start frame.
+  const needsStart = !!o.loop;
+  if (needsStart && !o.startImage) throw new Error('A loop needs one image.');
   if (!o.prompt.trim() && preset.id === 'free' && !o.startImage) throw new Error('Give a prompt, a non-free preset, or a start image.');
   if (end && !model.end) throw new Error(`${model.label} does not take an end frame.`);
   const compiled = compilePrompt([o.prompt, preset.text]);
@@ -91,7 +93,7 @@ export function videoBody(o: VideoOpts): Body {
   if (o.castMode === 'frame') body.castMode = 'frame';
   if (o.loop && o.autoFix) body.seamFix = 'auto';
   if (o.loras?.length) {
-    if (model.id !== 'ltx25') throw new Error('Your own LoRAs run on LTX-2.5.');
+    if (model.id !== 'ltx25' && model.id !== 'h3') throw new Error('Your own LoRAs run on LTX-2.5 or MiniMax H3.');
     body.loras = o.loras;
   }
   return body;
@@ -114,7 +116,9 @@ export function imageBody(o: ImageOpts): Body {
   if (!o.prompt.trim()) throw new Error('Image needs a prompt.');
   if (o.refImages?.length && o.model !== 'flux2') throw new Error('Reference pictures need model flux2.');
   if ((o.refImages?.length ?? 0) > 6) throw new Error('Up to 6 reference pictures.');
-  const size = sizeFor(o.aspect, IMAGE_RES.find((r) => r.id === o.res)!.mp);
+  const tier = IMAGE_RES.find((r) => r.id === o.res);
+  if (!tier) throw new Error(`Unknown image resolution "${o.res}". Options: ${IMAGE_RES.map((r) => r.id).join(', ')}`);
+  const size = sizeFor(o.aspect, tier.mp);
   return {
     kind: 'still', model: o.model, quality: o.quality, prompt: o.prompt, userPrompt: o.prompt, width: size.w, height: size.h, count: o.count,
     shotName: o.prompt.slice(0, 40),
@@ -207,7 +211,13 @@ export interface SceneOpts {
   shots: SceneShotIn[];
 }
 
-/** Director.tsx shootAll(): the /api/director/scene body. Keys are left off; the page's are random. */
+/**
+ * Director.tsx shootAll(): the /api/director/scene body. The page also sends
+ * each shot's `key` and, on a re-roll of an existing cut, its `take` and `cut`
+ * (the server skips shots that already have a take); those are page-side
+ * bookkeeping for scenes it created, and a scene shot from the MCP is always
+ * fresh, so the body carries none of them.
+ */
 export function sceneBody(o: SceneOpts): Body {
   checkPicks(o.picks, ['framing']);
   const era = checkEra(o.era);
@@ -222,11 +232,10 @@ export function sceneBody(o: SceneOpts): Body {
   const { scene, picks, audio, heroFrames, imageModel } = o;
   const grade = o.grade ?? true;
   const ramp = o.ramp ?? 'linear';
-  const list = o.shots.map((s) => ({ ...s, key: undefined as string | undefined, cut: undefined as number | undefined, take: undefined as number | undefined }));
   return {
     scene, picks, era, eraGrade: grade, ramp, withAudio: audio, heroFrames, imageModel,
     width: size.w, height: size.h,
-    shots: list.map((s) => ({ key: s.key, framing: s.framing, move: s.move, action: s.action, seconds: s.seconds, ramp: s.ramp, cast: s.cast, take: s.cut != null ? s.take : undefined })),
+    shots: o.shots.map((s) => ({ framing: s.framing, move: s.move, action: s.action, seconds: s.seconds, ramp: s.ramp, cast: s.cast })),
   };
 }
 
@@ -342,7 +351,12 @@ export function upscaleBody(o: UpscaleOpts): Body {
   if (mode === 'dream' && source.kind === 'image') throw new Error('Dream works on video. Use Sharpen or Redraw for a still.');
   const video = source.kind === 'video';
   const model = mode === 'sharpen' ? o.sharpModel : mode === 'redraw' ? o.redrawModel : undefined;
-  const engine = mode === 'sharpen' ? SHARPEN_MODELS.find((m) => m.id === o.sharpModel)!.label : mode === 'redraw' ? 'SeedVR2' : 'LTX-2.5';
+  let engine: string;
+  if (mode === 'sharpen') {
+    const m = SHARPEN_MODELS.find((x) => x.id === o.sharpModel);
+    if (!m) throw new Error(`Unknown sharpen model "${o.sharpModel}". Options: ${SHARPEN_MODELS.map((x) => x.id).join(', ')}`);
+    engine = m.label;
+  } else engine = mode === 'redraw' ? 'SeedVR2' : 'LTX-2.5';
   const modeLabel = (m: string | undefined) => UPSCALE_MODES.find((x) => x.id === m)?.label ?? 'Sharpen';
   return {
     kind: 'upscale', app: 'upscale', mode, sourceTake: source.take, source: source.token, sourceKind: source.kind,
@@ -431,6 +445,47 @@ export function soundBody(o: SoundOpts): Body {
     kind: 'sound', app: 'sound', videoModel: 'ltx25', sourceVideo: c.token, parentTake: c.takeId, seconds: soundSeconds(c.seconds),
     prompt: prompt.trim() || SOUND_PROMPT, userPrompt: prompt.trim() || 'Add sound',
     width: c.w, height: c.h, count: o.count, shotName: `sound_${c.name}`.slice(0, 40),
+  };
+}
+
+export interface MusicOpts {
+  tags: string;
+  lyrics: string;
+  model: 'turbo' | 'base';
+  /** 5 to 300 seconds. */
+  seconds: number;
+  key: string;
+  bpm: number;
+  timesignature: string;
+  language: string;
+  count: number;
+}
+
+/** Audio.tsx go() (Music). */
+export function musicBody(o: MusicOpts): Body {
+  if (!o.tags.trim() && !o.lyrics.trim()) throw new Error('Write some tags or lyrics first.');
+  return {
+    kind: 'music', app: 'audio', model: o.model,
+    tags: o.tags, lyrics: o.lyrics, key: o.key, bpm: o.bpm, timesignature: o.timesignature, language: o.language, seconds: o.seconds,
+    count: o.count, shotName: (o.tags || o.lyrics).slice(0, 30),
+  };
+}
+
+export interface SpeechOpts {
+  text: string;
+  /** The voice, in words. */
+  instruct: string;
+  language: string;
+  count: number;
+}
+
+/** Audio.tsx go() (Speech). */
+export function speechBody(o: SpeechOpts): Body {
+  if (!o.text.trim()) throw new Error('Write the words to say first.');
+  return {
+    kind: 'speech', app: 'audio', model: 'qwen3-tts',
+    text: o.text, instruct: o.instruct, language: o.language,
+    count: o.count, shotName: o.text.slice(0, 30),
   };
 }
 

@@ -8,7 +8,7 @@ import { join } from 'path';
 import { config } from './config.js';
 
 mkdirSync(config.dataDir, { recursive: true });
-const db = new Database(join(config.dataDir, 'openfield.db'));
+const db = new Database(join(config.dataDir, 'morpheus.db'));
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS takes (
@@ -24,8 +24,9 @@ CREATE TABLE IF NOT EXISTS takes (
   render_seconds REAL,
   transcript TEXT,
   starred INTEGER NOT NULL DEFAULT 0,
-  error TEXT,
-  parent_take_id INTEGER            -- upres links back to its source take
+   error TEXT,
+   parent_take_id INTEGER,           -- upres links back to its source take
+   trashed_at TEXT                   -- set while the take sits in the trash
 );
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,7 +61,19 @@ CREATE TABLE IF NOT EXISTS take_workflows (
   graph TEXT NOT NULL,              -- JSON, loadable as-is in ComfyUI
   source TEXT NOT NULL              -- 'engine' (what ran) | 'submitted' (our copy)
 );
+CREATE TABLE IF NOT EXISTS conversations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  settings TEXT NOT NULL DEFAULT '{}',  -- JSON: { thinking, model, ... }
+  blocks TEXT NOT NULL DEFAULT '[]'     -- JSON: the Agent's Block[] union
+);
 `);
+
+// Columns added after a database was first created: ALTER once, quietly.
+const takeCols = new Set((db.prepare('PRAGMA table_info(takes)').all() as { name: string }[]).map((c) => c.name));
+if (!takeCols.has('trashed_at')) db.exec('ALTER TABLE takes ADD COLUMN trashed_at TEXT');
 
 export interface Take {
   id: number;
@@ -77,6 +90,7 @@ export interface Take {
   starred: number;
   error: string | null;
   parent_take_id: number | null;
+  trashed_at: string | null;
 }
 
 export const takes = {
@@ -131,9 +145,44 @@ export const takes = {
     return db.prepare('SELECT * FROM takes WHERE prompt_id=?').get(promptId) as Take | undefined;
   },
   list(projectId: number | null, limit = 100): Take[] {
+    // Trashed takes stay out of the feeds until they are restored or purged.
     return projectId === null
-      ? (db.prepare('SELECT * FROM takes ORDER BY id DESC LIMIT ?').all(limit) as Take[])
-      : (db.prepare('SELECT * FROM takes WHERE project_id=? ORDER BY id DESC LIMIT ?').all(projectId, limit) as Take[]);
+      ? (db.prepare('SELECT * FROM takes WHERE trashed_at IS NULL ORDER BY id DESC LIMIT ?').all(limit) as Take[])
+      : (db.prepare('SELECT * FROM takes WHERE project_id=? AND trashed_at IS NULL ORDER BY id DESC LIMIT ?').all(projectId, limit) as Take[]);
+  },
+  /** Takes in the trash, most recently trashed first. */
+  trashed(limit = 500): Take[] {
+    return db.prepare('SELECT * FROM takes WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC, id DESC LIMIT ?').all(limit) as Take[];
+  },
+  setTrashed(id: number, on: boolean) {
+    // better-sqlite3 binds 0/1, not booleans.
+    db.prepare("UPDATE takes SET trashed_at=CASE WHEN ? THEN datetime('now') ELSE NULL END WHERE id=?").run(on ? 1 : 0, id);
+  },
+  /**
+   * Point a take's stored paths at new locations (a restore whose original
+   * names were taken lands under bumped names). Maps original -> new for any
+   * field, at any depth in settings.
+   */
+  remap(id: number, map: Record<string, string>) {
+    const row = db.prepare('SELECT output_path, settings FROM takes WHERE id=?').get(id) as { output_path: string | null; settings: string } | undefined;
+    if (!row) return;
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (row.output_path && map[row.output_path]) { sets.push('output_path=?'); params.push(map[row.output_path]); }
+    let s: Record<string, unknown> = {};
+    try { s = JSON.parse(row.settings || '{}'); } catch { s = {}; }
+    let changed = false;
+    const fix = (v: unknown): unknown => {
+      if (typeof v === 'string') { const r = map[v]; if (r !== undefined) { changed = true; return r; } return v; }
+      if (Array.isArray(v)) return v.map(fix);
+      if (v && typeof v === 'object') { for (const k of Object.keys(v as object)) (v as any)[k] = fix((v as any)[k]); return v; }
+      return v;
+    };
+    if (Object.keys(s).length) fix(s);
+    if (changed) { sets.push('settings=?'); params.push(JSON.stringify(s)); }
+    if (!sets.length) return;
+    params.push(id);
+    db.prepare(`UPDATE takes SET ${sets.join(', ')} WHERE id=?`).run(...params);
   },
   active(): Take[] {
     return db.prepare("SELECT * FROM takes WHERE status IN ('queued','rendering') ORDER BY id").all() as Take[];
@@ -143,7 +192,7 @@ export const takes = {
 /**
  * The ComfyUI graph behind each take, kept in its own table so the take list
  * stays small. Input files are named the way ComfyUI knows them, so the JSON
- * opens in ComfyUI without OpenField in the loop.
+ * opens in ComfyUI without Morpheus in the loop.
  */
 export const takeWorkflows = {
   set(takeId: number, graph: Record<string, unknown>, source: 'engine' | 'submitted') {
@@ -284,6 +333,58 @@ export const preambles = {
 };
 
 preambles.seedOnce();
+
+/**
+ * Agent conversations — the chat history, persisted so it survives a reload.
+ * `blocks` is the UI's Block[] union (user/thinking/text/tool/take/plan/error),
+ * which makes retry (truncate at a user turn) and fork (copy a prefix) cheap slices.
+ */
+export interface Conversation {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  settings: Record<string, unknown>;
+  blocks: unknown[];
+}
+
+export const conversations = {
+  create(title: string, blocks: unknown[], settings: unknown): number {
+    const r = db.prepare('INSERT INTO conversations (title, blocks, settings) VALUES (?,?,?)')
+      .run(title, JSON.stringify(blocks), JSON.stringify(settings ?? {}));
+    return Number(r.lastInsertRowid);
+  },
+  get(id: number): Conversation | undefined {
+    const r = db.prepare('SELECT * FROM conversations WHERE id=?').get(id) as any;
+    return r ? { ...r, settings: JSON.parse(r.settings || '{}'), blocks: JSON.parse(r.blocks || '[]') } : undefined;
+  },
+  list(limit = 200): Pick<Conversation, 'id' | 'title' | 'created_at' | 'updated_at'>[] {
+    return db.prepare('SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC, id DESC LIMIT ?').all(limit) as any[];
+  },
+  save(id: number, patch: { blocks?: unknown[]; settings?: unknown; title?: string }) {
+    const sets: string[] = ["updated_at=datetime('now')"];
+    const params: unknown[] = [];
+    if (patch.title !== undefined) { sets.push('title=?'); params.push(patch.title); }
+    if (patch.blocks !== undefined) { sets.push('blocks=?'); params.push(JSON.stringify(patch.blocks)); }
+    if (patch.settings !== undefined) { sets.push('settings=?'); params.push(JSON.stringify(patch.settings)); }
+    params.push(id);
+    db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id=?`).run(...params);
+  },
+  /** Delete a set of conversations; returns how many rows went. */
+  deleteMany(ids: number[]): number {
+    const uniq = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))];
+    if (!uniq.length) return 0;
+    const r = db.prepare(`DELETE FROM conversations WHERE id IN (${uniq.map(() => '?').join(',')})`).run(...uniq);
+    return Number(r.changes);
+  },
+  /** Copy blocks[0..upTo] of a conversation into a new one (a fork through that message). */
+  fork(id: number, upTo: number, title: string): number {
+    const cur = conversations.get(id);
+    if (!cur) throw new Error('conversation not found');
+    const n = Math.max(0, Math.min(upTo + 1, cur.blocks.length));
+    return conversations.create(title, cur.blocks.slice(0, n), cur.settings);
+  },
+};
 
 /** Small machine-wide settings (the render size, ...), shared by every browser and the MCP server. */
 export const meta = {

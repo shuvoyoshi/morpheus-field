@@ -19,7 +19,7 @@ const lines: string[] = [
   '',
   '# Models',
   '',
-  'OpenField does not ship model weights. It drives a ComfyUI install that has them,',
+  'Morpheus does not ship model weights. It drives a ComfyUI install that has them,',
   'and its graphs resolve models **by filename** — so a file has to keep the exact',
   'name in the tables below, in the folder shown, or the render fails.',
   '',
@@ -50,7 +50,6 @@ for (const b of BUNDLES) {
   lines.push('');
   lines.push(`- **Size** ${bundleGb(b)} GB${b.optional ? ' · optional' : ' · part of the core install'}`);
   lines.push(`- **License** ${b.license}`);
-  if (b.licenseWarning) lines.push(`- > ⚠️ **${b.licenseWarning}**`);
   if (b.nodes?.length) {
     for (const n of b.nodes) lines.push(`- **Custom nodes** [${n.pack}](${n.url}) — provides \`${n.class}\``);
   }
@@ -58,8 +57,10 @@ for (const b of BUNDLES) {
   lines.push('| File | Goes in | Size | Source |');
   lines.push('| --- | --- | --- | --- |');
   for (const f of b.files) {
-    const src = `[${f.repo}](https://huggingface.co/${f.repo}/blob/main/${f.path})${f.gated ? ' 🔒' : ''}`;
-    lines.push(`| \`${f.file}\` | \`models/${f.dir}/\` | ${f.gb} GB | ${src} |`);
+    const src = f.manual || !f.repo
+      ? 'manual — put it in the folder yourself (not downloaded)'
+      : `[${f.repo}](https://huggingface.co/${f.repo}/blob/main/${f.path})${f.gated ? ' 🔒' : ''}`;
+    lines.push(`| \`${f.file}\` | \`models/${f.dir}/\` | ${f.manual ? '—' : `${f.gb} GB`} | ${src} |`);
   }
   lines.push('');
 }
@@ -90,7 +91,7 @@ lines.push(
   'OPENFIELD_LTX25_TRANSFORMER=ltx25\\my-ltx25-finetune-fp8.safetensors',
   '```',
   '',
-  'Restart OpenField after a change. Setup and `npm run doctor` then check for the',
+  'Restart Morpheus after a change. Setup and `npm run doctor` then check for the',
   'configured file in place of the stock one, and `npm run models` never downloads',
   'a configured file: put it in the folder yourself. Variables left unset keep the',
   'stock file. The latent upscaler is not configurable.',

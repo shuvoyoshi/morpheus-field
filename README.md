@@ -1,6 +1,6 @@
-# OpenField
+# Morpheus
 
-OpenField is an open-source studio for video, stills and 3D that runs on your own
+Morpheus is an open-source studio for video, stills and 3D that runs on your own
 GPU through ComfyUI. Every app is a ComfyUI workflow with a screen on top, built
 on open-weights models and the Comfy SDK.
 
@@ -16,13 +16,15 @@ Built for Comfy's Open Source Higgsfield competition. MIT licensed.
 - **Seamless Loop**: one image becomes a loop whose first and last frames match.
 - **Object**: one still becomes a textured 3D model (GLB with PBR maps and a turntable).
 - **Add sound**: a soundtrack for a silent take, with the picture left as it is.
+- **Audio**: tags and lyrics become a full song (ACE-Step 1.5, key, tempo, length) or Qwen3-TTS says any words in a voice you describe; a popup player with waveform, transport and a queue.
 
 **Direct**
+- **Agent**: chat with a model that plans a multi-step job, shows it as a checklist to approve, and then drives the whole studio — chaining stills, shots and upscases until the ask is done. Its thinking streams live and stays collapsed until you expand it.
 - **Director**: genre, camera, framing, light, film stock, look, grade, an era scrubber (1960 to 2020) and speed ramps compile into the shot.
 - **Scene**: write a scene, a local LLM plans 2 to 6 shots, and they render and cut into one take.
 - **Stage**: block a shot in 3D with boxes, figures, walls or your own .glb models and a camera path; it renders as a finished shot that moves like the blocking. Figures hold their marks, so write people standing, turning or gesturing where you placed them.
 - **Cast**: save a character, prop or place once and `@mention` it in any prompt.
-- **Your LoRAs**: add up to four of your own LoRAs (a character, a style, a motion) to Image or Video. Drop the file in ComfyUI's `models/loras`; OpenField reads each file's tensor keys and only offers it to the model it was trained for.
+- **Your LoRAs**: add up to four of your own LoRAs (a character, a style, a motion) to Image or Video. Drop the file in ComfyUI's `models/loras`; Morpheus reads each file's tensor keys and only offers it to the model it was trained for.
 - **Coverage**, **Push in**, **Next beat**: nine shots of one moment, a stepped push in, four continuations.
 
 **Transform**
@@ -40,7 +42,7 @@ Built for Comfy's Open Source Higgsfield competition. MIT licensed.
 - **Improve the seam**: every loop gets a seam score; the fixer trims, re-renders or reseeds.
 
 **Build with**
-- **MCP**: 31 tools let Claude Code, Claude Desktop or any MCP client run every app.
+- **MCP**: 33 tools let Claude Code, Claude Desktop or any MCP client run every app.
 - **Open in ComfyUI**: every take opens as the exact workflow that rendered it, or downloads as JSON.
 - **[`workflows/`](workflows)**: every app's graph committed as API-format JSON.
 
@@ -56,6 +58,9 @@ Built for Comfy's Open Source Higgsfield competition. MIT licensed.
 
 - **Phone to Mirror.** Scan a QR code, film a move on your phone, and the clip
   lands in Mirror as the motion source.
+- **Open on your phone.** Scan a QR code from Setup and the whole app opens in
+  your phone's browser — library, live renders, queue — paired to this desktop
+  over your LAN, behind a token.
 - **Reshoot after the fact.** Move the camera on a clip you already have.
 - **Seamless loops with a seam meter.** Every loop is measured at its wrap and
   badged Seamless or Visible seam; the fixer reports the before and after numbers.
@@ -68,7 +73,7 @@ Built for Comfy's Open Source Higgsfield competition. MIT licensed.
 - **Stage, greybox to shot.** Block boxes, figures, props and your own .glb models
   in the browser, set a lens and a camera path, and the LTX-2.5 Layout-to-Render
   IC-LoRA renders a finished shot that follows the blocking exactly.
-- **MCP for agents.** 31 tools let an agent direct, render, check and finish shots
+- **MCP for agents.** 33 tools let an agent direct, render, check and finish shots
   end to end on your machine.
 
 ### How Stage differs
@@ -85,7 +90,7 @@ blocking. Every step runs on open weights on your own GPU.
 ## How it is built
 
 ```
-Browser (Vite + React)  ──>  OpenField server (Fastify, :3161)
+Browser (Vite + React)  ──>  Morpheus server (Fastify, :3161)
                                 │  graph builders: server/graphs/*.ts
                                 │  every job: @comfyorg/sdk (Comfy API v2)
                                 ▼
@@ -96,7 +101,7 @@ Browser (Vite + React)  ──>  OpenField server (Fastify, :3161)
   [`server/engine.ts`](server/engine.ts)): asset upload, job submit, the live event
   stream with step progress and latent previews, outputs and cancel.
 - Locally the SDK talks to [comfy-api-proxy](https://github.com/Comfy-Org/comfy-api-proxy)
-  in front of your ComfyUI. OpenField starts the proxy for you.
+  in front of your ComfyUI. Morpheus starts the proxy for you.
 - Local ComfyUI is the supported path. Comfy Cloud is experimental: set
   `COMFY_BASE_URL` and `COMFY_API_KEY` and the same SDK calls go there, but it
   is untested, the custom node packs limit which apps run, and Object and
@@ -134,7 +139,7 @@ Disk per bundle (from [`server/models.ts`](server/models.ts); install only what 
 | `cutout` + `sam3` | 0.4 + 1.8 GB | Remove background, Object swap |
 | `swap` | 1.3 GB | Object swap |
 | `flux2` | 50.9 GB | Image with FLUX.2 (non-commercial) |
-| `h3`, `h3-refs`, `h3-turbo` | 42.5, 21, 8 GB | MiniMax H3 video (geo-restricted) |
+| `h3`, `h3-turbo` | 21.5, 2 GB | MiniMax H3 video (geo-restricted; the all-in-one checkpoint is added by hand, not downloaded) |
 
 `dream` and `ltx-tools` add no weights. The Scene planner uses the Gemma 3 12B
 encoder from the legacy `ltx23` bundle when it is present, and falls back to
@@ -146,7 +151,7 @@ an OpenAI-compatible server (`OPENFIELD_LLM_URL`), Ollama or a sentence split.
    ```bash
    python main.py --listen 127.0.0.1 --port 8188 --preview-method auto
    ```
-2. Install OpenField and the Comfy API v2 bridge:
+2. Install Morpheus and the Comfy API v2 bridge:
    ```bash
    git clone https://github.com/wexloops/openfield.git
    cd openfield
@@ -175,14 +180,14 @@ then `npm start`.
 
 The full walkthrough, the custom node packs each app needs and every bundle are
 in [`docs/INSTALL.md`](docs/INSTALL.md). With Claude Code, open the repo and say
-"set up OpenField": [`CLAUDE.md`](CLAUDE.md) is the install as an agent checklist.
+"set up Morpheus": [`CLAUDE.md`](CLAUDE.md) is the install as an agent checklist.
 One command does it on Linux or WSL: `bash scripts/install.sh` (see
 [One-command install](docs/INSTALL.md#one-command-install); a password-gated
 preview on a rented GPU is in [`docs/RUNPOD.md`](docs/RUNPOD.md)).
 
 ## Models and licenses
 
-OpenField's code is MIT. It ships no model weights; you download them from their
+Morpheus's code is MIT. It ships no model weights; you download them from their
 publishers and each keeps its own license. Every default model is open weights.
 
 - **LTX-2.5 and the LTX IC-LoRAs** (video, Stage, Mirror, Reshoot, Effects, HDR):
@@ -199,7 +204,7 @@ Every model, LoRA and node pack with its license and source is in
 
 ## Sample media
 
-All sample media in this repository was generated with OpenField on open
+All sample media in this repository was generated with Morpheus on open
 weights. No real people, no third-party footage. Take, prompt, seed and model
 for every file are in [`docs/MEDIA.md`](docs/MEDIA.md).
 
@@ -209,7 +214,7 @@ for every file are in [`docs/MEDIA.md`](docs/MEDIA.md).
 claude mcp add openfield -- npx tsx /path/to/openfield/mcp/server.ts
 ```
 
-With the OpenField server running, ask in plain words: "Make a 5 second dolly
+With the Morpheus server running, ask in plain words: "Make a 5 second dolly
 shot of a lighthouse at dusk, then upscale the best take." Claude Desktop setup,
 the tool list and example prompts are in [`docs/MCP.md`](docs/MCP.md).
 
@@ -234,7 +239,9 @@ All optional, in `.env` (see [`.env.example`](.env.example)):
 | `OPENFIELD_VIDEO_DECODE` | by GPU | Video decode: `whole` clip or `chunked` (64 frames at a time; the default on AMD). Setup > Video decode overrides it |
 | `OPENFIELD_HOST` | `127.0.0.1` | Bind address. Keep it on loopback: the server has no authentication |
 | `OPENFIELD_PHONE_PORT`, `OPENFIELD_PHONE_HOST` | `3162`, auto | The phone capture listener, open only while a QR code shows |
-| `OPENFIELD_LLM_URL`, `OPENFIELD_LLM_MODEL`, `OPENFIELD_LLM_KEY` | unset, the server's only model (set it when the server lists several), none | Optional Scene planner through an OpenAI-compatible server (base URL up to `/v1`) |
+| `OPENFIELD_PHONE_APP_PORT` | `3163` | "Open on your phone" pairing proxy (Setup > Phone), open only while a pairing is live |
+| `OPENFIELD_UI_ORIGIN` | dev: Vite, prod: the sidecar | The app origin the phone pairing proxies to |
+| `OPENFIELD_LLM_URL`, `OPENFIELD_LLM_MODEL`, `OPENFIELD_LLM_KEY` | unset, the server's only model (set it when the server lists several), none | Optional Scene planner and the in-app Agent, through an OpenAI-compatible server (base URL up to `/v1`). The Agent needs a tool-calling model (Qwen3, gpt-oss, ...). These are the defaults; the Agent page and Setup store their own URL/model (with the server's per-model size, context and quantization), which override the matching line |
 | `OPENFIELD_LLM_REASONING` | unset | Overrides the Director's "Think first" switch: sent as `reasoning_effort` on every plan (`none` = no reasoning) |
 | `OPENFIELD_OLLAMA_URL`, `OPENFIELD_OLLAMA_MODEL` | `http://127.0.0.1:11434`, a model list | Optional Scene planner through Ollama |
 | `FFMPEG_BIN`, `FFPROBE_BIN` | `ffmpeg`, `ffprobe` | Paths to ffmpeg and ffprobe |
@@ -297,5 +304,5 @@ builders. Licenses are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 - ffmpeg and ffprobe: the seam meter, HDR format checks, alpha clips and previews.
 - App: React, Vite, Fastify, SQLite (better-sqlite3), three.js, the MCP SDK, zod and ws.
 
-OpenField is an independent project with its own name, design, copy and presets.
+Morpheus is an independent project with its own name, design, copy and presets.
 Higgsfield and Comfy Org do not endorse it.

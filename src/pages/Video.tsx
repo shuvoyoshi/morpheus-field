@@ -6,7 +6,7 @@ import {
 } from '../catalog';
 import { availableH3Turbo, secondsToFrames } from '../presets';
 import { setParams, useRoute } from '../router';
-import { isImage, isModel, takeHandoff, toast, useStore, type Ref, inFeed } from '../store';
+import { isAudio, isImage, isModel, takeHandoff, toast, useStore, type Ref, inFeed } from '../store';
 import { useDropZone, usePageDrop } from '../drop';
 import { ChipMenu, Clip, Icon, MediaCard, Spill, Stepper, Switch, TierChip, fmtSeconds, presetClip, useEstimate, useTierChoice } from '../ui';
 import Viewer, { animate, recreate, remove } from '../Viewer';
@@ -37,7 +37,8 @@ export default function VideoPage() {
   const [viewing, setViewing] = useState<number | null>(null);
   const [castMode, setCastMode] = useState<'sheet' | 'frame'>('sheet');
   const [loras, setLoras] = useLoraPicks('ltx');
-  // H3 turbo: '' = full sampling. Offered only for the distills ComfyUI lists.
+  const [h3loras, setH3loras] = useLoraPicks('h3');
+  // H3 turbo: '' = max sampling (20 steps). Offered only when the distill is present.
   const [turbo, setTurbo] = useState('');
   const [turbos, setTurbos] = useState<ReturnType<typeof availableH3Turbo>>([]);
   useEffect(() => {
@@ -70,9 +71,10 @@ export default function VideoPage() {
   const sheetOn = castOn && castMode === 'sheet';
   const shown = sheetOn ? (({ width, height }) => ({ w: width, h: height }))(sheetSize(size.w, size.h)) : size;
   const est = useEstimate({ kind: 'video', model: model.id, w: shown.w, h: shown.h, seconds: sheetOn ? Math.max(5, seconds) : seconds, ...(model.id === 'h3' ? { turbo: turbo || 'none' } : {}) });
-  const takes = useStore((s) => s.takes.filter((t) => inFeed(t) && !isImage(t) && !isModel(t)));
+  const takes = useStore((s) => s.takes.filter((t) => inFeed(t) && !isImage(t) && !isModel(t) && !isAudio(t)));
   const compiled = compilePrompt([prompt, preset.text]);
-  const needsStart = model.id === 'h3' || mode === 'loop';
+  // H3 now does text-to-video, so only loop mode requires a start frame.
+  const needsStart = mode === 'loop';
   const canGo = !busy && (prompt.trim() || preset.id !== 'free' || start) && (!needsStart || start);
 
   async function addFiles(files: FileList | File[]) {
@@ -121,7 +123,8 @@ export default function VideoPage() {
       };
       if (model.id === 'h3') body.lengthFrames = secondsToFrames(seconds);
       if (model.id === 'h3' && turbo) body.h3Turbo = turbo;
-      if (model.id === 'ltx25' && loras.length) body.loras = loras;
+      const picks = model.id === 'h3' ? h3loras : model.id === 'ltx25' ? loras : [];
+      if (picks.length) body.loras = picks;
       if (castOn && castMode === 'frame') body.castMode = 'frame';
       if (mode === 'loop' && autoFix) body.seamFix = 'auto';
       const r = await api.generate(body);
@@ -214,14 +217,15 @@ export default function VideoPage() {
           <TierChip app="video" value={res} onChange={setRes} />
           <Stepper value={count} min={1} max={4} onChange={setCount} fmt={(v) => `${v}/4`} />
           {model.id === 'ltx25' && <LoraChips family="ltx" value={loras} onChange={setLoras} />}
+          {model.id === 'h3' && <LoraChips family="h3" value={h3loras} onChange={setH3loras} />}
           {model.id === 'h3' && turbos.length > 0 && (
-            <ChipMenu icon="bolt" value={turbo} onChange={setTurbo} title="Turbo (step distill)"
-              options={[{ value: '', label: 'Full · 20 steps', note: 'No distill: the slowest, the reference quality.' }, ...turbos.map((t) => ({ value: t.key, label: t.label, note: t.note }))]} />
+            <ChipMenu icon="bolt" value={turbo} onChange={setTurbo} title="Sampling"
+              options={[{ value: '', label: 'Max · 20 steps', note: 'No distill: the slowest, the reference quality.' }, ...turbos.map((t) => ({ value: t.key, label: t.label, note: t.note }))]} />
           )}
         </div>
 
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {needsStart && !start && <div className="label" style={{ textTransform: 'none', letterSpacing: 0 }}>{mode === 'loop' ? 'Add one image to loop.' : `${model.label} needs a start frame.`}</div>}
+          {needsStart && !start && <div className="label" style={{ textTransform: 'none', letterSpacing: 0 }}>Add one image to loop.</div>}
           <button type="button" className="generate" disabled={!canGo} onClick={() => void go()}>
             <span>{busy ? 'Queuing...' : 'Generate'}</span>
             <span className="cost">{shown.w}x{shown.h}{est ? ` · ${fmtSeconds(est * count)}` : ''}</span>

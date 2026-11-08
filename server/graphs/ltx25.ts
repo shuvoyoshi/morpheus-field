@@ -381,7 +381,7 @@ export function buildLtx25Graph(p: Ltx25Params): Record<string, unknown> {
       class_type: 'SaveVideo',
       inputs: {
         video: ['vid', 0],
-        filename_prefix: p.filenamePrefix ?? 'video/OpenField_LTX25',
+        filename_prefix: p.filenamePrefix ?? 'video/Morpheus_LTX25',
         format: 'auto',
         codec: 'auto',
       },

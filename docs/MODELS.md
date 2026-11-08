@@ -2,7 +2,7 @@
 
 # Models
 
-OpenField does not ship model weights. It drives a ComfyUI install that has them,
+Morpheus does not ship model weights. It drives a ComfyUI install that has them,
 and its graphs resolve models **by filename** — so a file has to keep the exact
 name in the tables below, in the folder shown, or the render fails.
 
@@ -20,7 +20,7 @@ folder, and `HF_TOKEN` for the gated repos. Downloads resume, so an
 interrupted 21 GB pull does not start over.
 
 The core install is **LTX-2.5 video + Qwen-Image stills**, about 
-**72 GB**. Everything here is about 334 GB.
+**72 GB**. Everything here is about 318 GB.
 
 ## Bundles
 
@@ -69,42 +69,27 @@ The Edit app and its one-click image apps (New angle, Coverage, Push in, Next be
 
 ### MiniMax H3 video `h3`
 
-Video / Loop / Refs modes on the H3 engine. The only engine here with reference-image mode and generated dialogue. Best at held stillness and at taking direction.
+Text, image, first+last-frame and reference modes on the H3 engine, all running on the all-in-one H3 checkpoint. The only engine here with reference-image mode and generated dialogue. Best at held stillness and at taking direction.
 
-- **Size** 42.5 GB · optional
+- **Size** 21.5 GB · optional
 - **License** MiniMax H3 Community License Agreement. Licensed only outside the Excluded Territories; products over $20M yearly revenue need written authorization; commercial products must display "MiniMax H3" in their UI.
-- > ⚠️ **The H3 license EXCLUDES the United States, the European Union, the United Kingdom and South Korea, and forbids using H3 or its outputs there. OpenField does not check where you are.**
 
 | File | Goes in | Size | Source |
 | --- | --- | --- | --- |
-| `minimax_h3_fl2va_pruned_fp8_scaled.safetensors` | `models/diffusion_models/` | 21 GB | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors) |
+| `Minimax-h3_Singularity_ref2va_v2_int8.safetensors` | `models/diffusion_models/` | — | manual — put it in the folder yourself (not downloaded) |
 | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | `models/text_encoders/` | 15.7 GB | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) |
 | `minimax_h3_video_vae_fp16.safetensors` | `models/vae/` | 5.2 GB | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_video_vae_fp16.safetensors) |
 | `minimax_h3_audio_vae_fp32.safetensors` | `models/vae/` | 0.6 GB | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/vae/minimax_h3_audio_vae_fp32.safetensors) |
 
-### MiniMax H3 — Refs mode `h3-refs`
+### MiniMax H3 — turbo distill `h3-turbo`
 
-Adds the Refs mode checkpoint: build a shot from up to 4 reference images (a character sheet, a location plate) instead of a single start frame.
+The v0.1 step-distill LoRA that powers H3 Turbo mode (8 steps instead of 20). Without it, Turbo does not appear and only the 20-step max is offered.
 
-- **Size** 21 GB · optional
-- **License** MiniMax H3 Community License Agreement. Same territory exclusions as the H3 bundle (US, EU, UK, South Korea).
-
-| File | Goes in | Size | Source |
-| --- | --- | --- | --- |
-| `minimax_h3_ref2va_pruned_fp8_scaled.safetensors` | `models/diffusion_models/` | 21 GB | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3/blob/main/diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors) |
-
-### MiniMax H3 — turbo distills `h3-turbo`
-
-Step-distill LoRAs that drop H3 sampling from 20 steps to 4-8. OpenField only offers a turbo preset whose file is actually present, so missing ones just do not appear.
-
-- **Size** 8 GB · optional
-- **License** The lightx2v repo labels these LoRAs Apache 2.0, but the H3 license treats distills and other Model Derivatives as H3 works, so assume the full H3 terms (territory exclusions included) apply.
+- **Size** 2 GB · optional
+- **License** The lightx2v repo labels this LoRA Apache 2.0, but the H3 license treats distills and other Model Derivatives as H3 works, so assume the full H3 terms (territory exclusions included) apply.
 
 | File | Goes in | Size | Source |
 | --- | --- | --- | --- |
-| `minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors` | `models/loras/` | 2 GB | [lightx2v/Minimax-h3-Turbo](https://huggingface.co/lightx2v/Minimax-h3-Turbo/blob/main/minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors) |
-| `minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors` | `models/loras/` | 2 GB | [lightx2v/Minimax-h3-Turbo](https://huggingface.co/lightx2v/Minimax-h3-Turbo/blob/main/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors) |
-| `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors` | `models/loras/` | 2 GB | [lightx2v/Minimax-h3-Turbo](https://huggingface.co/lightx2v/Minimax-h3-Turbo/blob/main/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors) |
 | `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors` | `models/loras/` | 2 GB | [lightx2v/Minimax-h3-Turbo](https://huggingface.co/lightx2v/Minimax-h3-Turbo/blob/main/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors) |
 
 ### FLUX.2-dev stills `flux2`
@@ -113,7 +98,6 @@ Adds FLUX.2 as a second stills model — the photorealism lead where Qwen is the
 
 - **Size** 50.9 GB · optional
 - **License** FLUX Non-Commercial License (Black Forest Labs). The Turbo LoRA is a FLUX.2-dev derivative under the same terms; the Mistral text encoder is redistributed here under it too.
-- > ⚠️ **FLUX.2-dev is NON-COMMERCIAL. You may only run it for non-commercial purposes; any paid or revenue-generating use needs a commercial license from Black Forest Labs (bfl.ai/licensing).**
 
 | File | Goes in | Size | Source |
 | --- | --- | --- | --- |
@@ -141,7 +125,6 @@ The 4x-UltraSharp option in Sharpen mode: crisper edges than RealESRGAN on clean
 
 - **Size** 0.1 GB · optional
 - **License** 4x-UltraSharp: CC BY-NC-SA 4.0, Kim2091.
-- > ⚠️ **4x-UltraSharp is NON-COMMERCIAL (CC BY-NC-SA 4.0). Use the default RealESRGAN model for paid work.**
 
 | File | Goes in | Size | Source |
 | --- | --- | --- | --- |
@@ -353,6 +336,34 @@ The Object app and Make 3D on any still: TRELLIS.2 builds a textured mesh (GLB, 
 | `dino_v3_vit_l.safetensors` | `models/clip_vision/` | 1.21 GB | [Comfy-Org/TRELLIS.2](https://huggingface.co/Comfy-Org/TRELLIS.2/blob/main/clip_vision/dino_v3_vit_l.safetensors) |
 | `birefnet.safetensors` | `models/background_removal/` | 0.44 GB | [Comfy-Org/BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet/blob/main/background_removal/birefnet.safetensors) |
 
+### Audio (ACE-Step 1.5 music) `acestep`
+
+The Audio app, Music mode: ACE-Step 1.5 XL turns lyrics and tags into a full song with key, tempo and length control, from five seconds up to five minutes. Turbo is the 8-step distilled weights (fast drafts), Base the full 30 steps. Runs on ComfyUI core nodes, 0.42 or newer; the XL DiT files are gated, so accept the repo on Hugging Face and set HF_TOKEN before the installer can fetch them.
+
+- **Size** 28.4 GB · optional
+- **License** Apache 2.0 (ACE-Step, Copyright Timedomain Inc. and stepfun; the Qwen3 encoders and the Sana DCAE audio VAE are bundled by Comfy-Org under the same terms). Commercial use permitted.
+
+| File | Goes in | Size | Source |
+| --- | --- | --- | --- |
+| `acestep_v1.5_xl_turbo_bf16.safetensors` | `models/diffusion_models/` | 9.3 GB | [ACE-Step/ACE-Step-v15-XL](https://huggingface.co/ACE-Step/ACE-Step-v15-XL/blob/main/acestep_v1.5_xl_turbo_bf16.safetensors) 🔒 |
+| `acestep_v1.5_xl_base_bf16.safetensors` | `models/diffusion_models/` | 9.3 GB | [ACE-Step/ACE-Step-v15-XL](https://huggingface.co/ACE-Step/ACE-Step-v15-XL/blob/main/acestep_v1.5_xl_base_bf16.safetensors) 🔒 |
+| `qwen_0.6b_ace15.safetensors` | `models/text_encoders/` | 1.1 GB | [Comfy-Org/ace_step_1.5_ComfyUI_files](https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/blob/main/split_files/text_encoders/qwen_0.6b_ace15.safetensors) |
+| `qwen_4b_ace15.safetensors` | `models/text_encoders/` | 8.4 GB | [Comfy-Org/ace_step_1.5_ComfyUI_files](https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/blob/main/split_files/text_encoders/qwen_4b_ace15.safetensors) |
+| `ace_1.5_vae.safetensors` | `models/vae/` | 0.3 GB | [Comfy-Org/ace_step_1.5_ComfyUI_files](https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/blob/main/split_files/vae/ace_1.5_vae.safetensors) |
+
+### Audio (Qwen3-TTS speech) `qwen3-tts`
+
+The Audio app, Speech mode: Qwen3-TTS 1.7B VoiceDesign says your words in a voice you describe in plain words. Ten languages. The node pack downloads the weights from Hugging Face on first use when they are not already in models/Qwen3-TTS/, so an empty folder still runs.
+
+- **Size** 3.4 GB · optional
+- **License** Apache 2.0 (Qwen3-TTS, Qwen team). Node pack: ComfyUI-Qwen3-TTS (DarioFT), MIT. Commercial use permitted.
+- **Custom nodes** [ComfyUI-Qwen3-TTS](https://github.com/DarioFT/ComfyUI-Qwen3-TTS) — provides `Qwen3Loader`
+- **Custom nodes** [ComfyUI-Qwen3-TTS](https://github.com/DarioFT/ComfyUI-Qwen3-TTS) — provides `Qwen3VoiceDesign`
+
+| File | Goes in | Size | Source |
+| --- | --- | --- | --- |
+| `Qwen3-TTS-12Hz-1.7B-VoiceDesign/model.safetensors` | `models/Qwen3-TTS/` | 3.4 GB | [Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign/blob/main/model.safetensors) |
+
 ### LTX-2.3 video (legacy) `ltx23`
 
 The older LTX engine, kept because it is the playground for community fine-tunes and LoRAs. Superseded by LTX-2.5 for ordinary work — install it only if you want to run third-party LTX checkpoints.
@@ -389,7 +400,7 @@ subfolder keeps the subfolder, and ComfyUI on Windows writes it with a backslash
 OPENFIELD_LTX25_TRANSFORMER=ltx25\my-ltx25-finetune-fp8.safetensors
 ```
 
-Restart OpenField after a change. Setup and `npm run doctor` then check for the
+Restart Morpheus after a change. Setup and `npm run doctor` then check for the
 configured file in place of the stock one, and `npm run models` never downloads
 a configured file: put it in the folder yourself. Variables left unset keep the
 stock file. The latent upscaler is not configurable.

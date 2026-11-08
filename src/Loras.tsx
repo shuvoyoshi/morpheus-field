@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon, useClickAway } from './ui';
 
-export type LoraFamily = 'ltx' | 'qwen' | 'flux2' | 'flux' | 'wan' | 'other';
+export type LoraFamily = 'ltx' | 'qwen' | 'flux2' | 'flux' | 'wan' | 'h3' | 'other';
 export interface UserLora { name: string; family: LoraFamily | null; trigger?: string }
 export interface LoraPick { name: string; strength: number }
 
@@ -49,13 +49,17 @@ export function LoraChips({ family, value, onChange, dir = 'up' }: {
   useEffect(() => { void fetchLoras().then(setAll); }, []);
   useEffect(() => { if (open) void fetchLoras(true).then(setAll); }, [open]);
 
-  const fits = all.filter((l) => l.family === family || l.family === null);
-  // Drop picks the engine no longer has once the list has loaded.
+  // H3 has no reliable header signature, so an unknown-architecture LoRA is offered to it too.
+  const fits = all.filter((l) => l.family === family || l.family === null || (family === 'h3' && l.family === 'other'));
+  // Drop picks the engine no longer has once the list has loaded. Safe to run
+  // on value changes too: it only ever removes, and only stale picks, so it
+  // converges instead of looping.
   useEffect(() => {
     if (!all.length) return;
     const ok = value.filter((p) => fits.some((l) => l.name === p.name));
     if (ok.length !== value.length) onChange(ok);
-  }, [all, family]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, family, value]);
 
   const add = (name: string) => { onChange([...value, { name, strength: 1 }].slice(0, MAX)); setOpen(false); };
   const nudge = (i: number, d: number) =>

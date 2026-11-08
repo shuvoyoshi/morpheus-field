@@ -8,16 +8,18 @@
  *
  * <base> is the HDR take's own file name without its extension (<shot>_<seed>_HDR).
  *
- * The files are read through ComfyUI's own /view endpoint, so OpenField never
+ * The files are read through ComfyUI's own /view endpoint, so Morpheus never
  * needs to know where ComfyUI keeps its output folder. Validation reads the
  * written files back: ffprobe for the movies' color tags, the EXR header for
  * channels, pixel type and chromaticities.
  */
 import { execFile } from 'child_process';
 import { createWriteStream } from 'fs';
-import { rm, writeFile } from 'fs/promises';
+import { readdir, rm, writeFile } from 'fs/promises';
+import { join } from 'path';
 import { crc32 } from 'zlib';
 import { config } from './config.js';
+import { comfyOutputDir } from './comfy.js';
 import { hdrPaths } from './graphs/hdr.js';
 
 const view = (filename: string, subfolder: string) =>
@@ -173,6 +175,22 @@ export async function movieTags(path: string): Promise<MovieTags> {
 
 const HLG_TAGS = ['-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc'];
 
+/**
+ * The engine's own copies of a collected take — its EXR folder, the HLG
+ * master, any preview original — removed once the deliverables are safe in
+ * the project, so the library keeps exactly one copy of each file.
+ */
+export async function dropHdrSources(tag: string): Promise<void> {
+  const outDir = await comfyOutputDir();
+  if (!outDir) return;
+  const dir = join(outDir, 'morpheus', 'hdr');
+  try {
+    for (const name of await readdir(dir)) {
+      if (name === tag || name.startsWith(`${tag}_`)) await rm(join(dir, name), { recursive: true, force: true });
+    }
+  } catch { /* already gone */ }
+}
+
 // ---------- collect ----------
 
 export interface HdrFinish {
@@ -265,6 +283,9 @@ export async function collectHdr(tag: string, frames: number, base: string): Pro
   const pixel = [...new Set(head.channels.map((c) => c.type))].join('/');
   if (pixel !== 'half') problems.push(`EXR pixels are ${pixel}, expected half (16-bit float)`);
   if (!isAp1(head.chromaticities)) problems.push('EXR is not tagged with ACEScg (AP1) chromaticities');
+
+  // The masters are written and verified: drop the engine's source copies.
+  await dropHdrSources(tag).catch(() => {});
   return {
     exrZip, hlgMov, proresMov, frames,
     check: {

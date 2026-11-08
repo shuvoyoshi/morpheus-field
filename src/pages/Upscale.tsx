@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { downloadUrl, inputUrl, mediaUrl, posterUrl, uploadFile, type Take } from '../api';
 import { setParams, useRoute } from '../router';
-import { inFeed, isImage, isModel, settingsOf, toast, useStore } from '../store';
+import { inFeed, isAudio, isImage, isModel, settingsOf, toast, useStore } from '../store';
 import { ChipMenu, Icon, MediaCard, Spill, Switch, fmtSeconds, useEstimate } from '../ui';
 import { recreate, remove } from '../Viewer';
 import { DropWell } from './Mirror';
@@ -71,7 +71,7 @@ export default function UpscalePage() {
 
   const all = useStore((s) => s.takes);
   const takes = all.filter((t) => inFeed(t) && isUpscale(t));
-  const library = all.filter((t) => inFeed(t) && t.status === 'done' && !!t.output_path && !isUpscale(t) && !isModel(t)).slice(0, 60);
+  const library = all.filter((t) => inFeed(t) && t.status === 'done' && !!t.output_path && !isUpscale(t) && !isModel(t) && !isAudio(t)).slice(0, 60);
 
   async function pickTake(t: Take) {
     const kind = isImage(t) ? 'image' : 'video';
@@ -190,7 +190,7 @@ export default function UpscalePage() {
           <div className="rail-section">
             <div className="label">Model</div>
             {SHARPEN_MODELS.map((m) => (
-              <button key={m.id} type="button" className="rail-row" onClick={() => setSharpModel(m.id)} style={sharpModel === m.id ? { borderColor: 'rgba(255, 181, 71, 0.6)' } : undefined}>
+              <button key={m.id} type="button" className="rail-row" onClick={() => setSharpModel(m.id)} style={sharpModel === m.id ? { borderColor: 'rgba(255, 102, 0, 0.6)' } : undefined}>
                 <span><span className="val" style={{ color: sharpModel === m.id ? 'var(--accent-hi)' : undefined }}>{m.label}</span><span className="dim" style={{ fontSize: 12 }}>{m.note}</span></span>
                 {sharpModel === m.id && <Icon name="chev" size={14} />}
               </button>

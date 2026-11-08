@@ -235,7 +235,7 @@ export function buildExtendGraph(p: ExtendParams): Graph {
     g.da = { class_type: 'LTXVAudioVAEDecode', inputs: { samples: out.audio, audio_vae: ['avae', 0] } };
     audio = joinAudio(g, 'joinA', srcAudio, trimAudio(g, 'newA', ['da', 0], ctx / fps, nw / fps));
   }
-  save(g, frames, fps, audio, p.filenamePrefix ?? 'openfield/extend');
+  save(g, frames, fps, audio, p.filenamePrefix ?? 'morpheus/extend');
   return g;
 }
 
@@ -329,7 +329,7 @@ export function buildTransitionGraph(p: TransitionParams): Graph {
     }
     audio = track;
   }
-  save(g, seq, fps, audio, p.filenamePrefix ?? 'openfield/transition');
+  save(g, seq, fps, audio, p.filenamePrefix ?? 'morpheus/transition');
   return g;
 }
 
@@ -392,7 +392,7 @@ export function buildSpeakGraph(p: SpeakParams): Graph {
   });
   const s2 = samplePass(g, 's2', ['av2', 0], ['cond', 0], ['cond', 1], ['sigmas2', 0], ['noise2', 0]);
   const dv = decodeVideo(g, 'dv', s2.video);
-  save(g, dv, fps, ['audTrim', 0], p.filenamePrefix ?? 'openfield/speak');
+  save(g, dv, fps, ['audTrim', 0], p.filenamePrefix ?? 'morpheus/speak');
   return g;
 }
 
@@ -445,6 +445,6 @@ export function buildSoundGraph(p: SoundParams): Graph {
   const out = samplePass(g, 's1', ['mask', 2], ['mask', 0], ['mask', 1]);
   g.da = { class_type: 'LTXVAudioVAEDecode', inputs: { samples: out.audio, audio_vae: ['avae', 0] } };
   // Picture out = the clip's own frames, untouched; only the soundtrack is new.
-  save(g, ['src', 0], fps, ['da', 0], p.filenamePrefix ?? 'openfield/sound');
+  save(g, ['src', 0], fps, ['da', 0], p.filenamePrefix ?? 'morpheus/sound');
   return g;
 }

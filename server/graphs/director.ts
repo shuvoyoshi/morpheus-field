@@ -210,7 +210,7 @@ export function buildPlannerGraph(p: PlannerParams): Graph {
         thinking: false, use_default_template: true, mtp: 'off', system_prompt: ['sys', 0],
       },
     },
-    save: { class_type: 'SaveText', inputs: { text: ['gen', 0], filename_prefix: 'openfield/shotlist', format: 'json' } },
+    save: { class_type: 'SaveText', inputs: { text: ['gen', 0], filename_prefix: 'morpheus/shotlist', format: 'json' } },
   };
 }
 
@@ -256,6 +256,6 @@ export function buildCutGraph(p: CutParams): Graph {
     }
   });
   g.video = { class_type: 'CreateVideo', inputs: { images: frames, fps, ...(audio ? { audio } : {}) } };
-  g.save = { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: p.filenamePrefix ?? 'openfield/scene', format: 'auto', codec: 'auto' } };
+  g.save = { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: p.filenamePrefix ?? 'morpheus/scene', format: 'auto', codec: 'auto' } };
   return g;
 }

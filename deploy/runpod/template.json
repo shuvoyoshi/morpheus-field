@@ -1,5 +1,5 @@
 {
-  "name": "OpenField judge preview",
+  "name": "Morpheus judge preview",
   "imageName": "REPLACE_ME/openfield-runpod:0.1.0",
   "category": "NVIDIA",
   "isPublic": false,
@@ -17,5 +17,5 @@
     "OPENFIELD_RENDER_TIER": "720p",
     "OPENFIELD_SKIP_DOWNLOAD": "0"
   },
-  "readme": "OpenField (open-source, local-first creative suite on ComfyUI and the Comfy SDK) as a password-gated judge preview. Attach a network volume of 150 GB or more at /workspace; the first boot downloads about 92 GB of models there. Open port 3161 through the HTTP proxy and sign in with the judge password. See docs/RUNPOD.md in the repository."
+  "readme": "Morpheus (open-source, local-first creative suite on ComfyUI and the Comfy SDK) as a password-gated judge preview. Attach a network volume of 150 GB or more at /workspace; the first boot downloads about 92 GB of models there. Open port 3161 through the HTTP proxy and sign in with the judge password. See docs/RUNPOD.md in the repository."
 }

@@ -152,7 +152,7 @@ export function buildLtxGraph(p: LtxParams): Record<string, unknown> {
     dv: { class_type: 'VAEDecodeTiled', inputs: { samples: ['sep2', 0], vae: ['ckpt', 2], tile_size: 768, overlap: 64, temporal_size: 4096, temporal_overlap: 4 } },
     da: { class_type: 'LTXVAudioVAEDecode', inputs: { samples: ['sep2', 1], audio_vae: ['avae', 0] } },
     vid: { class_type: 'CreateVideo', inputs: { images: ['dv', 0], audio: ['da', 0], fps: LTX_FPS } },
-    save: { class_type: 'SaveVideo', inputs: { video: ['vid', 0], filename_prefix: 'video/OpenField_LTX', format: 'auto', codec: 'auto' } },
+    save: { class_type: 'SaveVideo', inputs: { video: ['vid', 0], filename_prefix: 'video/Morpheus_LTX', format: 'auto', codec: 'auto' } },
   });
 
   return g;

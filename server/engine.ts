@@ -1,5 +1,5 @@
 /**
- * Job engine: every render OpenField runs goes through the Comfy SDK
+ * Job engine: every render Morpheus runs goes through the Comfy SDK
  * (@comfyorg/sdk, Comfy API v2). The same code targets a local ComfyUI
  * behind comfy-api-proxy (the default) or Comfy Cloud / a Comfy API
  * deployment; only COMFY_BASE_URL and COMFY_API_KEY change.
@@ -227,6 +227,29 @@ async function savedModels(promptId: string): Promise<{ nodeId: string; name: st
   }
 }
 
+/**
+ * Where the engine saved a file, relative to ComfyUI's output folder
+ * (subfolder + filename), from the prompt's history. Null when the engine
+ * is unreachable or the file is not listed — the caller falls back to the
+ * bytes it already has.
+ */
+export async function savedRelPath(promptId: string, filename: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${config.comfyUrl}/history/${encodeURIComponent(promptId)}`, { signal: AbortSignal.timeout(5000) });
+    const h = (await r.json()) as Record<string, { outputs?: Record<string, Record<string, unknown>> }>;
+    for (const o of Object.values(h[promptId]?.outputs ?? {})) {
+      for (const key of ['images', 'videos', 'audio', '3d'] as const) {
+        const items = Array.isArray(o[key]) ? (o[key] as { filename: string; subfolder?: string; type?: string }[]) : [];
+        const it = items.find((x) => x.filename === filename && (x.type ?? 'output') === 'output');
+        if (it) return join(it.subfolder ?? '', it.filename);
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Start and end of a prompt's execution from ComfyUI's history, in ms. */
 async function executionWindow(promptId: string): Promise<{ start?: number; end?: number } | null> {
   try {
@@ -266,7 +289,7 @@ export async function result(jobId: string): Promise<JobResult> {
       renderSeconds,
     };
   }
-  // Prefer the graph's own save node ('save' or 'out' in every OpenField
+  // Prefer the graph's own save node ('save' or 'out' in every Morpheus
   // builder): a core LoadVideo also reports its input as a video output, and
   // other nodes (GLSLShader) report preview images. Then the media a user
   // wants (video, then image) over previews/temp.
@@ -305,20 +328,28 @@ export async function cancelAll(): Promise<void> {
   await Promise.allSettled([...jobs.values()].map((j) => j.cancel()));
 }
 
-/** Is the v2 API answering? */
+/**
+ * Is the v2 API answering? A timeout means the engine is slow (common when
+ * another process shares the GPU), not down — retry once. A refused connection
+ * is a genuinely dead engine and fails fast.
+ */
 export async function apiUp(): Promise<boolean> {
-  try {
-    const headers: Record<string, string> = {};
-    if (config.comfyApiKey) headers.Authorization = `Bearer ${config.comfyApiKey}`;
-    const r = await fetch(`${config.comfyBaseUrl}/api/v2/jobs?limit=1`, {
-      headers,
-      signal: AbortSignal.timeout(4000),
-    });
-    // 501 = Comfy Cloud has no job list yet, but it answered.
-    return r.ok || r.status === 501;
-  } catch {
-    return false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const headers: Record<string, string> = {};
+      if (config.comfyApiKey) headers.Authorization = `Bearer ${config.comfyApiKey}`;
+      const r = await fetch(`${config.comfyBaseUrl}/api/v2/jobs?limit=1`, {
+        headers,
+        signal: AbortSignal.timeout(config.probeTimeoutMs),
+      });
+      // 501 = Comfy Cloud has no job list yet, but it answered.
+      return r.ok || r.status === 501;
+    } catch (e) {
+      if (attempt === 0 && (e as { name?: string })?.name === 'TimeoutError') continue;
+      return false;
+    }
   }
+  return false;
 }
 
 export const isLocal = () => /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(config.comfyBaseUrl);
@@ -328,7 +359,7 @@ let proxyChild: import('child_process').ChildProcess | null = null;
 /**
  * Local mode only: start comfy-api-proxy in front of ComfyUI if the v2 API is
  * not already answering. The proxy keeps job state in <data>/proxy so jobs
- * survive an OpenField restart.
+ * survive an Morpheus restart.
  */
 export async function ensureProxy(timeoutMs = 20_000): Promise<boolean> {
   if (!isLocal()) return apiUp();

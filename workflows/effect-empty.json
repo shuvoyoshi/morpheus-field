@@ -288,7 +288,7 @@
         "vid",
         0
       ],
-      "filename_prefix": "openfield/effect_empty",
+      "filename_prefix": "morpheus/effect_empty",
       "format": "auto",
       "codec": "auto"
     }

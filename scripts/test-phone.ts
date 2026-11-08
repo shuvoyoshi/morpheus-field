@@ -1,5 +1,5 @@
 /**
- * Exercises the phone LAN listener (server/phone.ts) on its own: no OpenField
+ * Exercises the phone LAN listener (server/phone.ts) on its own: no Morpheus
  * server, no ComfyUI. Accepted clips go to an in-memory callback.
  *
  *   npx tsx scripts/test-phone.ts <sample.mp4> [port]

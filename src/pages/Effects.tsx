@@ -114,7 +114,7 @@ export default function EffectsPage() {
     setPicking(false);
     setBusy('Loading take...');
     try {
-      await adopt(await takeAsInput(id, still ? `take_${id}.png` : `take_${id}.mp4`), `take ${id}`, still ? 'still' : 'clip');
+      await adopt(await takeAsInput(id), `take ${id}`, still ? 'still' : 'clip');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'failed', true);
     } finally {
@@ -295,7 +295,7 @@ function EffectArt({ fx }: { fx: EffectDef }) {
 
 /** Pick a finished take as the effect's input. */
 function LibraryPicker({ still, onPick, onClose }: { still: boolean; onPick: (id: number, still: boolean) => void; onClose: () => void }) {
-  const takes = useStore((s) => s.takes.filter((t) => inFeed(t) && t.status === 'done' && isImage(t) === still && t.kind !== 'upres' && !isModel(t)));
+  const takes = useStore((s) => s.takes.filter((t) => inFeed(t) && t.status === 'done' && isImage(t) === still && t.kind !== 'upres' && t.kind !== 'audio' && !isModel(t)));
   return (
     <div className="viewer-back" style={{ display: 'block', background: 'rgba(0,0,0,0.82)', overflowY: 'auto' }} onClick={onClose}>
       <div className="page-pad" onClick={(e) => e.stopPropagation()}>

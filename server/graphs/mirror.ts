@@ -86,7 +86,7 @@ export function buildMirrorGraph(p: MirrorParams): Record<string, unknown> {
     crop: { class_type: 'LTXVCropGuides', inputs: { positive: ['guide', 0], negative: ['guide', 1], latent: ['split', 0] } },
     decode: { class_type: 'VAEDecode', inputs: { samples: ['crop', 2], vae: ['vvae', 0] } },
     video: { class_type: 'CreateVideo', inputs: { images: ['decode', 0], fps: FPS } },
-    save: { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: p.filenamePrefix ?? 'openfield/mirror', format: 'auto', codec: 'auto' } },
+    save: { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: p.filenamePrefix ?? 'morpheus/mirror', format: 'auto', codec: 'auto' } },
   };
 
   if (p.withAudio) {

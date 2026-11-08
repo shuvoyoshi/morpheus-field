@@ -134,7 +134,7 @@ export function buildEditGraph(p: EditParams): Record<string, unknown> {
     },
   };
   g.d = { class_type: 'VAEDecode', inputs: { samples: ['k', 0], vae: ['v', 0] } };
-  g.save = { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'OpenField_edit' } };
+  g.save = { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'Morpheus_edit' } };
   return g;
 }
 
@@ -159,7 +159,7 @@ function composeTail(g: Record<string, unknown>, p: EditParams, steps: number, d
     },
   };
   g.d = { class_type: 'VAEDecode', inputs: { samples: ['k', 0], vae: ['v', 0] } };
-  g.save = { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'OpenField_cast' } };
+  g.save = { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'Morpheus_cast' } };
   return g;
 }
 

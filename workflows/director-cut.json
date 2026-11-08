@@ -117,7 +117,7 @@
         "video",
         0
       ],
-      "filename_prefix": "openfield/scene",
+      "filename_prefix": "morpheus/scene",
       "format": "auto",
       "codec": "auto"
     }

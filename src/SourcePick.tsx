@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { mediaUrl, posterUrl, takeAsInput, uploadFile, type Take } from './api';
 import { useDropZone } from './drop';
 import { DropWell } from './pages/Mirror';
-import { isImage, isModel, settingsOf, toast, useStore } from './store';
+import { isAudio, isImage, isModel, settingsOf, toast, useStore } from './store';
 import { Icon } from './ui';
 
 export type SourceKind = 'video' | 'image' | 'audio';
@@ -47,11 +47,11 @@ export function measure(url: string, kind: SourceKind): Promise<{ w: number; h: 
 
 /** A finished take as a source. */
 export async function sourceFromTake(t: Take): Promise<Source> {
-  const kind: SourceKind = isImage(t) ? 'image' : 'video';
+  const kind: SourceKind = isImage(t) ? 'image' : isAudio(t) ? 'audio' : 'video';
   const url = mediaUrl(t.id);
-  const [token, m] = await Promise.all([takeAsInput(t.id, kind === 'image' ? `take_${t.id}.png` : `take_${t.id}.mp4`), measure(url, kind)]);
+  const [token, m] = await Promise.all([takeAsInput(t.id), measure(url, kind)]);
   const s = settingsOf(t);
-  return { token, kind, url, name: `take ${t.id}`, ...m, takeId: t.id, prompt: s.userPrompt || s.prompt };
+  return { token, kind, url, name: `take ${t.id}`, ...m, takeId: t.id, prompt: s.userPrompt || s.prompt || s.text || s.tags };
 }
 
 export async function sourceFromFile(f: File, kind: SourceKind): Promise<Source> {
@@ -107,7 +107,7 @@ export function SourceSlot(p: {
   sub: string;
 }) {
   const [busy, setBusy] = useState(false);
-  const takes = useStore((s) => s.takes.filter((t) => t.status === 'done' && t.output_path && !isModel(t) && (p.accept.includes(isImage(t) ? 'image' : 'video'))).slice(0, 8));
+  const takes = useStore((s) => s.takes.filter((t) => t.status === 'done' && t.output_path && !isModel(t) && (p.accept.includes(isImage(t) ? 'image' : isAudio(t) ? 'audio' : 'video'))).slice(0, 8));
   const v = p.value;
 
   const take = async (t: Take) => {
@@ -144,12 +144,13 @@ export function SourceSlot(p: {
       ) : (
         <>
           <DropWell accept={p.accept.map((k) => `${k}/*`).join(',')} onFile={(f) => void file(f)} icon={p.accept[0]} title={busy ? 'Loading...' : p.title} sub={p.sub} />
-          {takes.length > 0 && !p.accept.every((k) => k === 'audio') && (
+          {takes.length > 0 && (
             <div className="src-strip" aria-label="your takes">
               {takes.map((t) => (
                 <button key={t.id} type="button" title={`Use take ${t.id}`} disabled={busy} onClick={() => void take(t)}>
-                  <img src={posterUrl(t.id)} alt="" loading="lazy" />
-                  {!isImage(t) && <span><Icon name="video" size={11} /></span>}
+                  {isAudio(t)
+                    ? <span style={{ position: 'static', display: 'grid', placeItems: 'center', width: '100%', height: '100%', background: 'transparent', color: 'var(--accent)' }}><Icon name="audio" size={18} /></span>
+                    : <><img src={posterUrl(t.id)} alt="" loading="lazy" />{!isImage(t) && <span><Icon name="video" size={11} /></span>}</>}
                 </button>
               ))}
             </div>

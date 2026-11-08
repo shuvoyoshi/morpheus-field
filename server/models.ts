@@ -1,5 +1,5 @@
 /**
- * The model manifest — OpenField's single source of truth for what has to be on
+ * The model manifest — Morpheus's single source of truth for what has to be on
  * disk before a given feature can run.
  *
  * Three things read this file and must never disagree:
@@ -36,20 +36,20 @@ export interface ModelFile {
     | 'geometry_estimation'
     /** Image encoders for CLIPVisionLoader (TRELLIS.2 reads DINOv3 from here). */
     | 'clip_vision'
-    /** Background removal models (LoadBackgroundRemovalModel, BiRefNet). */
+    /** Background removal: LoadBackgroundRemovalModel (BiRefNet) and the core RemoveBackground (ComfyUI >= 0.38). */
     | 'background_removal'
     /** Saved conditionings (LTXVLoadConditioning reads this folder). */
     | 'embeddings'
-    /** Core RemoveBackground models (ComfyUI >= 0.38). */
-    | 'background_removal'
     /** ComfyUI-SeedVR2_VideoUpscaler's own folder (models/SEEDVR2/). */
     | 'SEEDVR2'
     /** Model patches such as the Z-Image Fun ControlNet (ModelPatchLoader reads this folder). */
-    | 'model_patches';
-  /** HuggingFace repo id. */
-  repo: string;
-  /** Path within that repo. */
-  path: string;
+    | 'model_patches'
+    /** comfyui-qwen3-tts's own folder (models/Qwen3-TTS/), a subfolder per model. */
+    | 'Qwen3-TTS';
+  /** HuggingFace repo id. Omitted for manual files, which have no download source. */
+  repo?: string;
+  /** Path within that repo. Omitted for manual files. */
+  path?: string;
   gb: number;
   /** Repo requires accepting a license on the model page before download. */
   gated?: boolean;
@@ -59,6 +59,12 @@ export interface ModelFile {
    * configured name, which the installer never downloads.
    */
   override?: string;
+  /**
+   * Must sit on disk but has no download source (a community fine-tune from
+   * Civitai, for example). The installer never fetches it; Setup and doctor
+   * report it as "put it there yourself".
+   */
+  manual?: boolean;
 }
 
 export interface Bundle {
@@ -67,8 +73,6 @@ export interface Bundle {
   /** What you lose if it's absent. */
   purpose: string;
   license: string;
-  /** Surfaced in the UI and the installer — read before you ship anything. */
-  licenseWarning?: string;
   /** Not needed for a working install; the installer skips these by default. */
   optional?: boolean;
   /** ComfyUI node classes this bundle needs, if any are from custom nodes. */
@@ -133,16 +137,17 @@ export const BUNDLES: Bundle[] = [
   {
     id: 'h3',
     label: 'MiniMax H3 video',
-    purpose: 'Video / Loop / Refs modes on the H3 engine. The only engine here with reference-image mode and generated dialogue. Best at held stillness and at taking direction.',
+    purpose: 'Text, image, first+last-frame and reference modes on the H3 engine, all running on the all-in-one H3 checkpoint. The only engine here with reference-image mode and generated dialogue. Best at held stillness and at taking direction.',
     license: 'MiniMax H3 Community License Agreement. Licensed only outside the Excluded Territories; products over $20M yearly revenue need written authorization; commercial products must display "MiniMax H3" in their UI.',
-    licenseWarning:
-      'The H3 license EXCLUDES the United States, the European Union, the United Kingdom and South Korea, and forbids using H3 or its outputs there. OpenField does not check where you are.',
     // Opt-in rather than part of the core install: a default that quietly hands
     // a new user a model their country is excluded from is not a good default.
     optional: true,
     files: [
-      { file: 'minimax_h3_fl2va_pruned_fp8_scaled.safetensors', dir: 'diffusion_models',
-        ...HF('Comfy-Org/MiniMax-H3', 'diffusion_models/minimax_h3_fl2va_pruned_fp8_scaled.safetensors', 21.0) },
+      // The all-in-one checkpoint every H3 mode runs on. A community fine-tune
+      // (Civitai: Minimax-h3_Singularity), so the installer cannot fetch it —
+      // put it in models/diffusion_models/ yourself.
+      { file: 'Minimax-h3_Singularity_ref2va_v2_int8.safetensors', dir: 'diffusion_models',
+        gb: 0, manual: true },
       { file: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors', dir: 'text_encoders',
         ...HF('Comfy-Org/MiniMax-H3', 'text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors', 15.7) },
       { file: 'minimax_h3_video_vae_fp16.safetensors', dir: 'vae',
@@ -152,29 +157,12 @@ export const BUNDLES: Bundle[] = [
     ],
   },
   {
-    id: 'h3-refs',
-    label: 'MiniMax H3 — Refs mode',
-    purpose: 'Adds the Refs mode checkpoint: build a shot from up to 4 reference images (a character sheet, a location plate) instead of a single start frame.',
-    license: 'MiniMax H3 Community License Agreement. Same territory exclusions as the H3 bundle (US, EU, UK, South Korea).',
-    optional: true,
-    files: [
-      { file: 'minimax_h3_ref2va_pruned_fp8_scaled.safetensors', dir: 'diffusion_models',
-        ...HF('Comfy-Org/MiniMax-H3', 'diffusion_models/minimax_h3_ref2va_pruned_fp8_scaled.safetensors', 21.0) },
-    ],
-  },
-  {
     id: 'h3-turbo',
-    label: 'MiniMax H3 — turbo distills',
-    purpose: 'Step-distill LoRAs that drop H3 sampling from 20 steps to 4-8. OpenField only offers a turbo preset whose file is actually present, so missing ones just do not appear.',
-    license: 'The lightx2v repo labels these LoRAs Apache 2.0, but the H3 license treats distills and other Model Derivatives as H3 works, so assume the full H3 terms (territory exclusions included) apply.',
+    label: 'MiniMax H3 — turbo distill',
+    purpose: 'The v0.1 step-distill LoRA that powers H3 Turbo mode (8 steps instead of 20). Without it, Turbo does not appear and only the 20-step max is offered.',
+    license: 'The lightx2v repo labels this LoRA Apache 2.0, but the H3 license treats distills and other Model Derivatives as H3 works, so assume the full H3 terms (territory exclusions included) apply.',
     optional: true,
     files: [
-      { file: 'minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors', dir: 'loras',
-        ...HF('lightx2v/Minimax-h3-Turbo', 'minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors', 2.0) },
-      { file: 'minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors', dir: 'loras',
-        ...HF('lightx2v/Minimax-h3-Turbo', 'minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors', 2.0) },
-      { file: 'minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors', dir: 'loras',
-        ...HF('lightx2v/Minimax-h3-Turbo', 'minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors', 2.0) },
       { file: 'minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors', dir: 'loras',
         ...HF('lightx2v/Minimax-h3-Turbo', 'minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors', 2.0) },
     ],
@@ -184,7 +172,6 @@ export const BUNDLES: Bundle[] = [
     label: 'FLUX.2-dev stills',
     purpose: 'Adds FLUX.2 as a second stills model — the photorealism lead where Qwen is the text and layout specialist.',
     license: 'FLUX Non-Commercial License (Black Forest Labs). The Turbo LoRA is a FLUX.2-dev derivative under the same terms; the Mistral text encoder is redistributed here under it too.',
-    licenseWarning: 'FLUX.2-dev is NON-COMMERCIAL. You may only run it for non-commercial purposes; any paid or revenue-generating use needs a commercial license from Black Forest Labs (bfl.ai/licensing).',
     optional: true,
     files: [
       { file: 'flux2_dev_fp8mixed.safetensors', dir: 'diffusion_models',
@@ -216,7 +203,6 @@ export const BUNDLES: Bundle[] = [
     label: 'Upscale: Sharpen with 4x-UltraSharp',
     purpose: 'The 4x-UltraSharp option in Sharpen mode: crisper edges than RealESRGAN on clean renders. Needs the upres bundle.',
     license: '4x-UltraSharp: CC BY-NC-SA 4.0, Kim2091.',
-    licenseWarning: '4x-UltraSharp is NON-COMMERCIAL (CC BY-NC-SA 4.0). Use the default RealESRGAN model for paid work.',
     optional: true,
     files: [
       { file: '4x-UltraSharp.pth', dir: 'upscale_models', ...HF('Kim2091/UltraSharp', '4x-UltraSharp.pth', 0.07) },
@@ -451,6 +437,40 @@ export const BUNDLES: Bundle[] = [
     ],
   },
   {
+    id: 'acestep',
+    label: 'Audio (ACE-Step 1.5 music)',
+    purpose: 'The Audio app, Music mode: ACE-Step 1.5 XL turns lyrics and tags into a full song with key, tempo and length control, from five seconds up to five minutes. Turbo is the 8-step distilled weights (fast drafts), Base the full 30 steps. Runs on ComfyUI core nodes, 0.42 or newer; the XL DiT files are gated, so accept the repo on Hugging Face and set HF_TOKEN before the installer can fetch them.',
+    license: 'Apache 2.0 (ACE-Step, Copyright Timedomain Inc. and stepfun; the Qwen3 encoders and the Sana DCAE audio VAE are bundled by Comfy-Org under the same terms). Commercial use permitted.',
+    optional: true,
+    files: [
+      { file: 'acestep_v1.5_xl_turbo_bf16.safetensors', dir: 'diffusion_models',
+        ...HF('ACE-Step/ACE-Step-v15-XL', 'acestep_v1.5_xl_turbo_bf16.safetensors', 9.3, true) },
+      { file: 'acestep_v1.5_xl_base_bf16.safetensors', dir: 'diffusion_models',
+        ...HF('ACE-Step/ACE-Step-v15-XL', 'acestep_v1.5_xl_base_bf16.safetensors', 9.3, true) },
+      { file: 'qwen_0.6b_ace15.safetensors', dir: 'text_encoders',
+        ...HF('Comfy-Org/ace_step_1.5_ComfyUI_files', 'split_files/text_encoders/qwen_0.6b_ace15.safetensors', 1.1) },
+      { file: 'qwen_4b_ace15.safetensors', dir: 'text_encoders',
+        ...HF('Comfy-Org/ace_step_1.5_ComfyUI_files', 'split_files/text_encoders/qwen_4b_ace15.safetensors', 8.4) },
+      { file: 'ace_1.5_vae.safetensors', dir: 'vae',
+        ...HF('Comfy-Org/ace_step_1.5_ComfyUI_files', 'split_files/vae/ace_1.5_vae.safetensors', 0.3) },
+    ],
+  },
+  {
+    id: 'qwen3-tts',
+    label: 'Audio (Qwen3-TTS speech)',
+    purpose: 'The Audio app, Speech mode: Qwen3-TTS 1.7B VoiceDesign says your words in a voice you describe in plain words. Ten languages. The node pack downloads the weights from Hugging Face on first use when they are not already in models/Qwen3-TTS/, so an empty folder still runs.',
+    license: 'Apache 2.0 (Qwen3-TTS, Qwen team). Node pack: ComfyUI-Qwen3-TTS (DarioFT), MIT. Commercial use permitted.',
+    optional: true,
+    nodes: [
+      { class: 'Qwen3Loader', pack: 'ComfyUI-Qwen3-TTS', url: 'https://github.com/DarioFT/ComfyUI-Qwen3-TTS' },
+      { class: 'Qwen3VoiceDesign', pack: 'ComfyUI-Qwen3-TTS', url: 'https://github.com/DarioFT/ComfyUI-Qwen3-TTS' },
+    ],
+    files: [
+      { file: 'Qwen3-TTS-12Hz-1.7B-VoiceDesign/model.safetensors', dir: 'Qwen3-TTS',
+        ...HF('Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign', 'model.safetensors', 3.4) },
+    ],
+  },
+  {
     id: 'ltx23',
     label: 'LTX-2.3 video (legacy)',
     purpose: 'The older LTX engine, kept because it is the playground for community fine-tunes and LoRAs. Superseded by LTX-2.5 for ordinary work — install it only if you want to run third-party LTX checkpoints.',
@@ -547,7 +567,11 @@ export function bundlesFor(req: {
   if (req.kind === 'stage-look') return req.engine === 'edit' ? ['edit'] : ['stage-look'];
   if (req.kind === 'stage') return ['ltx25', 'stage', ...(req.lookImage ? [] : bundlesFor({ kind: 'stage-look', engine: req.lookEngine }))];
   if (req.kind === 'object') return ['trellis2'];
+  // Audio app: one bundle per mode.
+  if (req.kind === 'music') return ['acestep'];
+  if (req.kind === 'speech') return ['qwen3-tts'];
   if (req.videoModel === 'ltx25') return ['ltx25'];
   if (req.videoModel === 'ltx') return ['ltx23'];
-  return req.mode === 'reference' ? ['h3', 'h3-refs'] : ['h3'];
+  // Every H3 mode (t2v, i2v, refs) runs on the one all-in-one checkpoint.
+  return ['h3'];
 }

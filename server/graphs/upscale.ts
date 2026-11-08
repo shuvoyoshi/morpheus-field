@@ -29,7 +29,7 @@ export interface UpscaleSource {
   file: string;
   /** Carry the source audio through (video only). */
   withAudio?: boolean;
-  /** Source frame rate. OpenField's own takes are 24. */
+  /** Source frame rate. Morpheus's own takes are 24. */
   fps?: number;
   /** Load at most this many frames (0 = all). */
   frameCap?: number;
@@ -125,7 +125,7 @@ export function buildSharpenGraph(p: SharpenParams): Graph {
     frames = ['rife', 0];
     fps *= 2;
   }
-  save(g, p.source, frames, audio, fps, 'OpenField_UP');
+  save(g, p.source, frames, audio, fps, 'Morpheus_UP');
   return g;
 }
 
@@ -215,7 +215,7 @@ export function buildRedrawGraph(p: RedrawParams): Graph {
       },
     },
   });
-  save(g, p.source, ['redraw', 0], audio, p.source.fps ?? 24, 'OpenField_UP');
+  save(g, p.source, ['redraw', 0], audio, p.source.fps ?? 24, 'Morpheus_UP');
   return g;
 }
 
@@ -303,6 +303,6 @@ export function buildDreamGraph(p: DreamParams): Graph {
       inputs: { samples: ['sep', 0], vae: ['vvae', 0], tile_size: 768, overlap: 64, temporal_size: 4096, temporal_overlap: 32 },
     },
   });
-  save(g, p.source, ['dv', 0], audio, DREAM_FPS, 'OpenField_UP');
+  save(g, p.source, ['dv', 0], audio, DREAM_FPS, 'Morpheus_UP');
   return g;
 }

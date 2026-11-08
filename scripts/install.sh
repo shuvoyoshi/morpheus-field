@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenField one-command install for Linux and WSL2.
+# Morpheus one-command install for Linux and WSL2.
 #
 #   bash scripts/install.sh            interactive
 #   bash scripts/install.sh --yes      take every default (core bundles only)
@@ -74,14 +74,14 @@ set_env() {
 env_has() { [ -f "$ENV_FILE" ] && grep -Eq "^$1=.+" "$ENV_FILE"; }
 
 cd "$ROOT"
-bold "OpenField install"
+bold "Morpheus install"
 [ "$DRY" = 1 ] && note "Dry run: nothing is installed or written."
 
 # --------------------------------------------------------------- 1. checks ----
 step "1. Prerequisites"
 command -v node >/dev/null || die "Node is not installed. Install Node 22 or newer (https://nodejs.org or nvm), then re-run."
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-[ "$NODE_MAJOR" -ge 22 ] || die "Node $(node -v) is too old. OpenField needs 22 or newer (the Comfy SDK requires it)."
+[ "$NODE_MAJOR" -ge 22 ] || die "Node $(node -v) is too old. Morpheus needs 22 or newer (the Comfy SDK requires it)."
 ok "Node $(node -v)"
 for t in git curl; do command -v "$t" >/dev/null || die "$t is not installed."; done
 ok "git, curl"
@@ -109,7 +109,7 @@ if command -v nvidia-smi >/dev/null; then
     elif [ "$VRAM_GB" -lt 23 ]; then note "Under 24 GB: video offloads and is slow, and defaults to 480p."; fi
   fi
 else
-  note "nvidia-smi not found. OpenField needs an NVIDIA GPU for local renders."
+  note "nvidia-smi not found. Morpheus needs an NVIDIA GPU for local renders."
 fi
 WSL=0; grep -qi microsoft /proc/version 2>/dev/null && WSL=1
 [ "$WSL" = 1 ] && note "WSL detected. A ComfyUI on the Windows side works too: point at its folder under /mnt/<drive>/."
@@ -200,7 +200,7 @@ else
     run "$VENV/bin/pip" install "comfy-api-proxy==$PROXY_VERSION"
   fi
   PROXY_BIN="$VENV/bin/comfy-api-proxy"
-  ok "installed in $VENV (OpenField starts it for you)"
+  ok "installed in $VENV (Morpheus starts it for you)"
 fi
 
 # ----------------------------------------------------------------- 5. .env ----
@@ -212,7 +212,7 @@ MODELS_DIR=""
 if [ -n "$COMFY_DIR" ]; then MODELS_DIR="$COMFY_DIR/models"; set_env COMFY_MODELS_DIR "$MODELS_DIR"; fi
 if [ -n "$COMFY_PYBIN" ] && ! env_has COMFY_LAUNCH; then
   set_env COMFY_LAUNCH "$COMFY_PYBIN $COMFY_DIR/main.py --listen 127.0.0.1 --port 8188 --preview-method auto"
-  ok "COMFY_LAUNCH set: OpenField can start ComfyUI (with live previews)"
+  ok "COMFY_LAUNCH set: Morpheus can start ComfyUI (with live previews)"
 fi
 if env_has HF_TOKEN || [ -n "${HF_TOKEN:-}" ]; then
   ok "HF_TOKEN already set"
@@ -237,7 +237,7 @@ if [ "$DRY" = 1 ]; then echo "  would run: npm run models -- --list"; else npm r
 cat <<'EOF'
   Core: ltx25 (40 GB) + qwen (32 GB), both commercial use allowed. The right default.
   Licenses to know before picking more:
-    h3, h3-refs, h3-turbo: the H3 license EXCLUDES the US, the EU, the UK and South Korea.
+    h3, h3-turbo: the H3 license EXCLUDES the US, the EU, the UK and South Korea. h3 needs the all-in-one checkpoint added by hand (not downloaded).
     flux2 and upres-ultrasharp: NON-COMMERCIAL.
     effects, cast, stage, hdr, swap: LTX terms, each repo gated separately on Hugging Face.
 EOF

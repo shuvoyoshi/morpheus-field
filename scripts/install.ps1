@@ -1,11 +1,11 @@
 <#
-OpenField install for native Windows (PowerShell 5.1 or 7).
+Morpheus install for native Windows (PowerShell 5.1 or 7).
 
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Yes      take every default
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -DryRun   change nothing
 
-Honest status: OpenField is built and tested on Linux and on WSL2 driving a
+Honest status: Morpheus is built and tested on Linux and on WSL2 driving a
 Windows ComfyUI. Native Windows should work (Node, ComfyUI, comfy-api-proxy,
 curl.exe and ffmpeg all run there) but has not been run end to end. If
 anything here fails, use WSL2 and scripts/install.sh, which can drive this
@@ -68,7 +68,7 @@ function Set-EnvKey([string]$key, [string]$value) {
 function EnvHas([string]$key) { (Test-Path $EnvFile) -and (Select-String -Path $EnvFile -Pattern "^$([regex]::Escape($key))=." -Quiet) }
 
 Set-Location $Root
-Write-Host 'OpenField install (native Windows)' -ForegroundColor White
+Write-Host 'Morpheus install (native Windows)' -ForegroundColor White
 Say-Note 'Native Windows is not tested end to end yet. WSL2 with scripts/install.sh is the tested path.'
 if ($DryRun) { Say-Note 'Dry run: nothing is installed or written.' }
 
@@ -76,7 +76,7 @@ if ($DryRun) { Say-Note 'Dry run: nothing is installed or written.' }
 Say-Step '1. Prerequisites'
 if (-not (Has node)) { Fail 'Node is not installed. Install Node 22 or newer from https://nodejs.org, then re-run.' }
 $nodeMajor = [int](node -p "process.versions.node.split('.')[0]")
-if ($nodeMajor -lt 22) { Fail "Node $(node -v) is too old. OpenField needs 22 or newer." }
+if ($nodeMajor -lt 22) { Fail "Node $(node -v) is too old. Morpheus needs 22 or newer." }
 Say-Ok "Node $(node -v)"
 if (-not (Has git)) { Fail 'git is not installed (https://git-scm.com).' }
 if (-not (Has curl.exe)) { Fail 'curl.exe is missing (it ships with Windows 10 and 11).' }
@@ -92,7 +92,7 @@ if (Has nvidia-smi) {
   $gb = [math]::Floor([int]$parts[1] / 1024)
   Say-Ok "GPU $($parts[0]), about $gb GB"
   if ($gb -lt 16) { Say-Note 'Under 16 GB: plan on stills only.' } elseif ($gb -lt 23) { Say-Note 'Under 24 GB: video offloads and defaults to 480p.' }
-} else { Say-Note 'nvidia-smi not found. OpenField needs an NVIDIA GPU for local renders.' }
+} else { Say-Note 'nvidia-smi not found. Morpheus needs an NVIDIA GPU for local renders.' }
 
 # ---------------------------------------------------------------- 2 ----
 Say-Step '2. ComfyUI (0.38 or newer)'
@@ -164,7 +164,7 @@ else {
     Run $pyExe ($pyArgs + @('-m', 'venv', $venv))
     Run (Join-Path $venv 'Scripts\python.exe') @('-m', 'pip', 'install', "comfy-api-proxy==$ProxyVersion")
   }
-  Say-Ok "installed in $venv (OpenField starts it for you)"
+  Say-Ok "installed in $venv (Morpheus starts it for you)"
 }
 
 # ---------------------------------------------------------------- 5 ----
@@ -176,7 +176,7 @@ $ModelsDir = ''
 if ($ComfyDir) { $ModelsDir = Join-Path $ComfyDir 'models'; Set-EnvKey 'COMFY_MODELS_DIR' $ModelsDir }
 if ($ComfyPy -and -not (EnvHas 'COMFY_LAUNCH')) {
   Set-EnvKey 'COMFY_LAUNCH' "`"$ComfyPy`" `"$(Join-Path $ComfyDir 'main.py')`" --listen 127.0.0.1 --port 8188 --preview-method auto"
-  Say-Ok 'COMFY_LAUNCH set: OpenField can start ComfyUI'
+  Say-Ok 'COMFY_LAUNCH set: Morpheus can start ComfyUI'
 }
 if ((EnvHas 'HF_TOKEN') -or $env:HF_TOKEN) {
   Say-Ok 'HF_TOKEN already set'
@@ -197,7 +197,7 @@ Say-Step '6. App and models'
 Run npm @('ci', '--no-audit', '--no-fund')
 if ($DryRun) { Write-Host '  would run: npm run models -- --list' } else { npm run -s models -- --list }
 Write-Host '  Core: ltx25 (40 GB) + qwen (32 GB), both commercial use allowed. The right default.'
-Write-Host '  h3, h3-refs, h3-turbo: the H3 license EXCLUDES the US, the EU, the UK and South Korea.'
+Write-Host '  h3, h3-turbo: the H3 license EXCLUDES the US, the EU, the UK and South Korea. h3 needs the all-in-one checkpoint added by hand.'
 Write-Host '  flux2 and upres-ultrasharp: NON-COMMERCIAL. effects, cast, stage, hdr, swap: LTX terms, gated one by one.'
 $pick = Ask "Bundles to download (comma list, 'core' for ltx25,qwen, 'none' to skip)" 'core'
 if ($pick -eq 'core') { $pick = 'ltx25,qwen' }

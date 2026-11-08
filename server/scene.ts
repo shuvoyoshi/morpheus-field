@@ -4,8 +4,9 @@
  *   plan     the shot list from a local LLM. First the engine itself
  *            (TextGenerateLTX2Prompt on the Gemma 3 12B encoder, see
  *            ./graphs/director.ts), then an OpenAI-compatible server when
- *            OPENFIELD_LLM_URL names one, then Ollama when it answers on this
- *            machine, then a plain sentence split so a scene always plans.
+ *            the app's LLM config (or OPENFIELD_LLM_URL) names one, then
+ *            Ollama when it answers on this machine, then a plain sentence
+ *            split so a scene always plans.
  *            Runs as a background job the client polls; a busy GPU queue can
  *            hold the engine planner for minutes.
  *   shoot    the cut is a take of its own. Its settings hold the shot list,
@@ -29,6 +30,8 @@ import * as eng from './engine.js';
 import { config } from './config.js';
 import { cast as castDb, takes, type Take } from './jobs.js';
 import { castHeroFrame, mentioned } from './cast.js';
+import { assertPrivateUrl } from './net.js';
+import { effectiveLlmConfig } from './llmConfig.js';
 import { buildCutGraph, buildPlannerGraph, PLANNER_ENCODER, PLANNER_SYSTEM, type CutClip } from './graphs/director.js';
 import { parseShotList, partialShots, snapFraming, snapMove, snapSeconds, splitScene } from './shotlist.js';
 import {
@@ -105,17 +108,16 @@ export const getPlan = (id: string) => plans.get(id);
 
 const OLLAMA = (process.env.OPENFIELD_OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 const OLLAMA_MODELS = (process.env.OPENFIELD_OLLAMA_MODEL || 'gpt-oss:20b,qwen3:30b,qwen3:8b,gemma3:12b').split(',').map((s) => s.trim()).filter(Boolean);
-/** An OpenAI-compatible server (llama.cpp, LM Studio, vLLM, ...): its base URL up to and including /v1. Unset = not used. */
-const LLM = (process.env.OPENFIELD_LLM_URL || '').trim().replace(/\/+$/, '');
-const LLM_MODEL = (process.env.OPENFIELD_LLM_MODEL || '').trim();
-const LLM_KEY = (process.env.OPENFIELD_LLM_KEY || '').trim();
-/**
- * Overrides the Director's "Think first" switch for the LLM server: sent as `reasoning_effort` on every plan
- * (e.g. "none" switches a thinking model's reasoning off on LM Studio). Unset = the switch decides.
- */
-const LLM_REASONING = (process.env.OPENFIELD_LLM_REASONING || '').trim();
+// The LLM wiring is resolved at call time through effectiveLlmConfig() (a
+// value saved in Setup/Agent wins over OPENFIELD_LLM_* in .env, per field),
+// so a config change takes effect on the very next plan — no restart, and
+// the Director planner sees exactly what the agent sees.
+
 /** The server-side override of the "Think first" switch, for the UI to show; null when the switch decides. */
-export const plannerReasoningOverride = (): string | null => (LLM && LLM_REASONING) || null;
+export const plannerReasoningOverride = (): string | null => {
+  const eff = effectiveLlmConfig();
+  return (eff.url && eff.reasoning) || null;
+};
 /** How long the LLM may stay silent (a server that hides the model's thinking says nothing until the list), and run in all. */
 const LLM_IDLE = 300_000;
 const LLM_TOTAL = 900_000;
@@ -143,8 +145,9 @@ async function planOnEngine(scene: string, want: number, seed: number): Promise<
   throw new Error('the engine planner timed out (the GPU queue is busy)');
 }
 
-/** Ask a local Ollama, if one answers. Optional: OpenField never needs it. `think` lets a thinking model reason first. */
+/** Ask a local Ollama, if one answers. Optional: Morpheus never needs it. `think` lets a thinking model reason first. */
 async function planOnOllama(scene: string, want: number, think: boolean): Promise<string> {
+  await assertPrivateUrl(OLLAMA);
   const tags = await fetch(`${OLLAMA}/api/tags`, { signal: AbortSignal.timeout(2000) }).then((r) => r.json() as Promise<{ models?: { name: string }[] }>);
   const names = new Set((tags.models ?? []).map((m) => m.name));
   const model = OLLAMA_MODELS.find((m) => names.has(m));
@@ -198,25 +201,29 @@ async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string
 }
 
 /**
- * Ask the OpenAI-compatible server named by OPENFIELD_LLM_URL. Optional: OpenField never needs it.
+ * Ask the OpenAI-compatible server named by the app's LLM config (Setup/Agent,
+ * else OPENFIELD_LLM_URL in .env). Optional: Morpheus never needs it.
  * Streams where the server can, so the plan reports thinking/writing and each shot as it is written,
  * and a reply that breaks off still keeps the shots written before it. Without `think` the model is asked
- * not to reason (reasoning_effort "none"); OPENFIELD_LLM_REASONING, when set, decides instead.
+ * not to reason (reasoning_effort "none"); a saved/env reasoning value, when set, decides instead.
  */
 async function planOnLlm(scene: string, want: number, think: boolean, progress: PlanProgress): Promise<{ raw: string; note?: string }> {
-  const effort = LLM_REASONING || (think ? '' : 'none');
-  if (!LLM) throw new Error('OPENFIELD_LLM_URL is not set');
+  const eff = effectiveLlmConfig();
+  const url = eff.url ?? '';
+  const effort = eff.reasoning || (think ? '' : 'none');
+  if (!url) throw new Error('no LLM URL is set (Setup or the Agent page, or OPENFIELD_LLM_URL in .env)');
+  await assertPrivateUrl(url);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (LLM_KEY) headers.Authorization = `Bearer ${LLM_KEY}`;
-  let model = LLM_MODEL;
+  if (eff.key) headers.Authorization = `Bearer ${eff.key}`;
+  let model = eff.model ?? '';
   if (!model) {
-    const r = await fetch(`${LLM}/models`, { headers, signal: AbortSignal.timeout(5000) });
-    if (!r.ok) throw new Error(`${LLM}/models answered ${r.status}`);
+    const r = await fetch(`${url}/models`, { headers, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) throw new Error(`${url}/models answered ${r.status}`);
     const list = (await r.json()) as { data?: { id?: string }[] };
     // A server with one model (llama-server) is asked as it is. One that lists several (LM Studio lists
     // every downloaded model, embedding models too, and loads the one asked for) needs the choice made.
     const ids = (list.data ?? []).flatMap((m) => (m.id ? [m.id] : []));
-    if (ids.length !== 1) throw new Error(`${LLM}/models lists ${ids.length || 'no'} model${ids.length === 1 ? '' : 's'}; set OPENFIELD_LLM_MODEL`);
+    if (ids.length !== 1) throw new Error(`${url}/models lists ${ids.length || 'no'} model${ids.length === 1 ? '' : 's'}; set a model in Setup or OPENFIELD_LLM_MODEL`);
     model = ids[0];
   }
   progress({ model, phase: 'waiting' });
@@ -237,7 +244,7 @@ async function planOnLlm(scene: string, want: number, think: boolean, progress: 
     let r: Response | undefined;
     for (;;) {
       touch();
-      r = await fetch(`${LLM}/chat/completions`, {
+      r = await fetch(`${url}/chat/completions`, {
         method: 'POST',
         headers,
         signal: ctl.signal,
@@ -257,7 +264,7 @@ async function planOnLlm(scene: string, want: number, think: boolean, progress: 
       } else if (t.stream) t.stream = false;
       else break;
     }
-    if (!r || !r.ok) throw new Error(`${model} at ${LLM} answered ${r?.status}`);
+    if (!r || !r.ok) throw new Error(`${model} at ${url} answered ${r?.status}`);
     if (!r.body || !(r.headers.get('content-type') ?? '').includes('text/event-stream')) {
       const d = (await r.json()) as { choices?: { message?: { content?: string | null } }[] };
       return { raw: dropThinking(`${d.choices?.[0]?.message?.content ?? ''}`), note };
@@ -330,8 +337,8 @@ export function attachCast(shots: SceneShot[], scene: string): SceneShot[] {
 
 /**
  * Start planning a scene. `planner` 'auto' tries the engine, then the
- * OpenAI-compatible server (only when OPENFIELD_LLM_URL is set), then Ollama,
- * then the sentence split; naming one runs only that one (plus the split
+ * OpenAI-compatible server (only when an LLM URL is set — in Setup or .env),
+ * then Ollama, then the sentence split; naming one runs only that one (plus the split
  * when it fails, so the user always gets a list to edit). `think` lets a
  * thinking model reason before it writes (slower, steadier on scenes with
  * many beats); off by default, for quick drafts.
@@ -348,7 +355,7 @@ export function startPlan(scene: string, opts: { shots?: number; planner?: strin
     : opts.planner === 'llm' ? ['llm']
     : opts.planner === 'ollama' ? ['ollama']
     : opts.planner === 'split' ? []
-    : LLM ? ['engine', 'llm', 'ollama'] : ['engine', 'ollama'];
+    : effectiveLlmConfig().url ? ['engine', 'llm', 'ollama'] : ['engine', 'ollama'];
   const progress: PlanProgress = (u) => Object.assign(plan, u);
   const settle = (u: Partial<Plan>) => Object.assign(plan, { stage: undefined, model: undefined, phase: undefined, partial: undefined }, u);
   void (async () => {
@@ -374,8 +381,12 @@ export function startPlan(scene: string, opts: { shots?: number; planner?: strin
     }
     settle({ status: 'done', shots: attachCast(splitScene(scene, want), scene), planner: 'split', seconds: (Date.now() - started) / 1000 });
   })().catch((e) => settle({ status: 'failed', error: errText(e) }));
-  // Plans are small; keep the last hundred.
-  if (plans.size > 100) plans.delete(plans.keys().next().value!);
+  // Plans are small; keep the last hundred, never evicting one still running.
+  while (plans.size > 100) {
+    const oldest = plans.keys().next().value!;
+    if (plans.get(oldest)?.status === 'running') break;
+    plans.delete(oldest);
+  }
   return plan;
 }
 
@@ -647,7 +658,7 @@ async function step(cutId: number) {
     });
   }
   const withAudio = !!r.withAudio && clips.some((c) => c.hasAudio);
-  const graph = buildCutGraph({ clips, width: r.width, height: r.height, withAudio, filenamePrefix: 'openfield/scene' });
+  const graph = buildCutGraph({ clips, width: r.width, height: r.height, withAudio, filenamePrefix: 'morpheus/scene' });
   const frames = clips.reduce((n, c) => n + c.frames, 0);
   takes.setSettings(cutId, { ...s, seconds: Math.round((frames / 24) * 10) / 10, cutFrames: frames, cutAudio: withAudio, shotTakes: done.map((t) => t.id) });
   const jobId = await eng.submit(graph);

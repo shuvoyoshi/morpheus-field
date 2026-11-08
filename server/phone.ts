@@ -1,7 +1,7 @@
 /**
  * "Film it on your phone": a one-shot LAN drop box for a single clip.
  *
- * The main OpenField server binds loopback and has no authentication, so it is
+ * The main Morpheus server binds loopback and has no authentication, so it is
  * never put on the network. Instead, while a phone session is open, this module
  * runs a second, deliberately tiny HTTP listener on the LAN interface that
  * answers exactly two requests:
@@ -16,17 +16,25 @@
  * accepted bytes go to the `onClip` callback, and the caller decides what to do.
  *
  * Nothing in here reads config.ts so it can be exercised in isolation
- * (see scripts/test-phone.ts).
+ * (see scripts/test-phone.ts). LAN detection is shared with the pairing
+ * proxy in server/lan.ts.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { readFileSync, existsSync } from 'fs';
-import { networkInterfaces } from 'os';
-import { execFile } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { detectNetwork, fmtHost, type PhoneNetwork } from './lan.js';
 
-const PAGE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'phone.html'), 'utf8');
+export { detectNetwork, pickLanAddress, type PhoneNetwork } from './lan.js';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const PAGE = readFileSync(join(here, 'phone.html'), 'utf8');
+// The page is served from this listener's own port, so a /logo/... URL would 404
+// (in dev the UI is on the Vite port); the CSP allows data: for images, so inline
+// the mark instead. If the file is ever missing the page hides the empty slot.
+const LOGO_PATH = join(here, '..', 'public', 'logo', 'muilogo.png');
+const LOGO = existsSync(LOGO_PATH) ? `data:image/png;base64,${readFileSync(LOGO_PATH).toString('base64')}` : '';
 
 export interface PhoneClip { data: Buffer; mime: string; ext: 'mp4' | 'mov' | 'webm'; name: string }
 
@@ -36,19 +44,6 @@ export type PhoneState =
   | { state: 'receiving'; bytes: number }
   | { state: 'received'; result: unknown }
   | { state: 'closed'; reason: 'received' | 'expired' | 'cancelled' | 'abuse' | 'replaced' };
-
-export interface PhoneNetwork {
-  /** 'none' when not under WSL. */
-  wsl: 'none' | 'mirrored' | 'nat';
-  /** Interface address the listener is bound to. */
-  bindHost: string;
-  /** Address put in the QR URL. Differs from bindHost only behind a WSL2 NAT. */
-  urlHost: string;
-  /** Plain-language problem, or null when the phone should simply be able to connect. */
-  warning: string | null;
-  /** Commands that fix the warning (run in an elevated Windows PowerShell). */
-  commands: string[];
-}
 
 export interface PhoneSessionInfo {
   /** Public session id (not the secret). The desktop matches live events on it. */
@@ -148,6 +143,7 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
     if (!m[2] && req.method === 'GET') {
       opts.onState(id, { state: 'opened' });
       const html = PAGE
+        .replace('__LOGO__', LOGO)
         .replace('__MAX_BYTES__', String(maxBytes))
         .replace('__EXPIRES_AT__', String(expiresAt));
       res.writeHead(200, {
@@ -223,7 +219,7 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
     } catch (e) {
       s.uploading = false;
       opts.onState(id, { state: 'waiting' });
-      send(res, 500, { error: `OpenField could not keep the clip: ${e instanceof Error ? e.message : 'unknown error'}` });
+      send(res, 500, { error: `Morpheus could not keep the clip: ${e instanceof Error ? e.message : 'unknown error'}` });
     }
   }
 }
@@ -261,119 +257,4 @@ export function sniffVideo(b: Buffer): PhoneClip['ext'] | null {
   // Older QuickTime files can open with another top-level atom before ftyp/moov.
   if (['moov', 'mdat', 'wide', 'free', 'skip'].includes(atom)) return 'mov';
   return null;
-}
-
-// ---------- network ----------
-
-const fmtHost = (h: string) => (h.includes(':') ? `[${h}]` : h);
-
-function isWsl(): boolean {
-  if (process.platform !== 'linux') return false;
-  if (process.env.WSL_DISTRO_NAME) return true;
-  try { return /microsoft/i.test(readFileSync('/proc/version', 'utf8')); } catch { return false; }
-}
-
-const isPrivate = (ip: string) =>
-  /^192\.168\./.test(ip) || /^10\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip);
-const VIRTUAL_IF = /^(docker|br-|veth|virbr|vmnet|vboxnet|tailscale|zt|utun|tun|tap|lo)/i;
-
-/** Interface name -> metric of its default route (Linux only). */
-function defaultRouteMetrics(): Map<string, number> {
-  const out = new Map<string, number>();
-  if (!existsSync('/proc/net/route')) return out;
-  try {
-    for (const line of readFileSync('/proc/net/route', 'utf8').split('\n').slice(1)) {
-      const f = line.trim().split(/\s+/);
-      if (f.length > 7 && f[1] === '00000000' && f[7] === '00000000') {
-        const metric = Number(f[6]);
-        if (!out.has(f[0]) || metric < out.get(f[0])!) out.set(f[0], metric);
-      }
-    }
-  } catch { /* fall back to ranking */ }
-  return out;
-}
-
-/** Best guess at the address a phone on the same Wi-Fi can reach. */
-export function pickLanAddress(): { name: string; address: string } | null {
-  const routes = defaultRouteMetrics();
-  const cands: { name: string; address: string; score: number }[] = [];
-  for (const [name, addrs] of Object.entries(networkInterfaces())) {
-    for (const a of addrs ?? []) {
-      if (a.family !== 'IPv4' || a.internal || a.address.startsWith('169.254.')) continue;
-      if (VIRTUAL_IF.test(name)) continue;
-      let score = isPrivate(a.address) ? 100 : 10;
-      if (a.address.startsWith('192.168.')) score += 20;
-      else if (a.address.startsWith('10.')) score += 10;
-      if (routes.has(name)) score += 1000 - Math.min(999, routes.get(name)!);
-      cands.push({ name, address: a.address, score });
-    }
-  }
-  cands.sort((x, y) => y.score - x.score);
-  return cands[0] ?? null;
-}
-
-/** Mirrored-mode WSL puts 10.255.255.254 on lo; NAT mode never does. */
-function wslMode(): 'none' | 'mirrored' | 'nat' {
-  if (!isWsl()) return 'none';
-  const lo = networkInterfaces().lo ?? [];
-  return lo.some((a) => a.address === '10.255.255.254') ? 'mirrored' : 'nat';
-}
-
-/** Windows' own LAN address, from ipconfig.exe through WSL interop. Best effort. */
-function windowsLanAddress(): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile('ipconfig.exe', { timeout: 3000, windowsHide: true }, (err, stdout) => {
-      if (err) return resolve(null);
-      const ips = [...String(stdout).matchAll(/IPv4[^:\r\n]*:\s*([\d.]+)/g)].map((m) => m[1]);
-      resolve(ips.find((ip) => ip.startsWith('192.168.')) ?? ips.find((ip) => ip.startsWith('10.')) ?? null);
-    });
-  });
-}
-
-const VM_CREATOR_WSL = '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}';
-
-export async function detectNetwork(override: string | undefined, port: number): Promise<PhoneNetwork> {
-  const wsl = wslMode();
-  const local = pickLanAddress();
-  const localAddrs = new Set(Object.values(networkInterfaces()).flat().map((a) => a?.address));
-  const overrideIsLocal = !!override && localAddrs.has(override);
-  const bindHost = overrideIsLocal ? override! : local?.address ?? '';
-  if (!bindHost) {
-    throw new Error('No network connection found. Connect this machine to the same Wi-Fi as your phone.');
-  }
-  const firewall = `New-NetFirewallRule -DisplayName "OpenField phone" -Direction Inbound -Protocol TCP -LocalPort ${port} -Action Allow -Profile Private`;
-
-  if (wsl === 'nat') {
-    // WSL2 NAT: the Linux address is behind Windows and unreachable from the phone.
-    // The phone has to hit Windows, which forwards to us via portproxy.
-    const win = (override && !overrideIsLocal ? override : null) ?? (await windowsLanAddress());
-    return {
-      wsl,
-      bindHost,
-      urlHost: win ?? bindHost,
-      warning:
-        'OpenField is running inside WSL2 with NAT networking, so your phone cannot reach it directly. ' +
-        'Forward the port from Windows once (elevated PowerShell), or switch WSL to mirrored networking ' +
-        '(add networkingMode=mirrored under [wsl2] in %UserProfile%\\.wslconfig, then wsl --shutdown).' +
-        (win ? '' : ' Windows\' LAN address could not be detected; set OPENFIELD_PHONE_HOST to it.'),
-      commands: [
-        `netsh interface portproxy add v4tov4 listenaddress=${win ?? '0.0.0.0'} listenport=${port} connectaddress=${bindHost} connectport=${port}`,
-        firewall,
-      ],
-    };
-  }
-  if (wsl === 'mirrored') {
-    return {
-      wsl,
-      bindHost,
-      urlHost: bindHost,
-      warning: null,
-      // Mirrored mode shares Windows' address, but Hyper-V's firewall still filters inbound.
-      commands: [
-        `New-NetFirewallHyperVRule -Name OpenFieldPhone -DisplayName "OpenField phone" -Direction Inbound -VMCreatorId '${VM_CREATOR_WSL}' -Protocol TCP -LocalPorts ${port}`,
-        firewall,
-      ],
-    };
-  }
-  return { wsl, bindHost, urlHost: bindHost, warning: null, commands: [] };
 }

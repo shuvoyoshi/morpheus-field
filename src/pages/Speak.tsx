@@ -31,11 +31,11 @@ export default function SpeakPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [viewing, setViewing] = useState<number | null>(null);
 
-  // Viewer hand-off: a still fills the face, a video fills the clip.
+  // Viewer hand-off: a still fills the face, a sound fills the voice, a clip fills the clip.
   useTakeParam(params.get('take'), (s) => {
-    if (s.kind === 'image') setFace(s);
-    else setClip(s);
-    setParams({ take: null });
+    if (s.kind === 'image') { setFace(s); setParams({ mode: null, take: null }); }
+    else if (s.kind === 'audio') { setVoice(s); setParams({ mode: null, take: null }); }
+    else { setClip(s); setParams({ mode: 'sound', take: null }); }
   });
 
   const speak = mode === 'speak';

@@ -20,14 +20,17 @@ import * as catalog from '../src/catalog.ts';
 import { secondsToFrames } from '../src/presets.ts';
 import {
   cutoutBody, restyleBody, swapBody, directorBody, editBody, fixSeamBody, hdrBody, stageBody, effectBody, sceneBody, withGenre, extendBody, imageBody, mirrorBody, reshootBody, soundBody, speakBody, transitionBody, upscaleBody, videoBody, videoSize, wire,
-  objectBody,
+  objectBody, musicBody, speechBody,
   type Body, type ClipMeta, type SourceRef,
 } from './bodies.ts';
 import { EFFECT_QUALITY, effectById, effectPrompt, effectSize } from '../src/effects.ts';
 import { appTier, tierSizeOf, type RenderTier } from '../src/renderTier.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const page = (name: string) => readFileSync(join(ROOT, 'src/pages', name), 'utf8');
+// Normalize line endings: the marker matching below uses "\n", but the sources are
+// CRLF on a Windows checkout.
+const readSrc = (rel: string) => readFileSync(join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n');
+const page = (name: string) => readSrc(`src/pages/${name}`);
 
 /** The source between two markers (exclusive), or a loud failure. */
 function between(src: string, start: string, end: string): string {
@@ -74,6 +77,7 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     { name: 'video t2v fixed aspect 1080p', model: 'ltx25', prompt: 'a long hotel corridor', preset: 'dolly-zoom', aspect: '21:9', res: '1080p', seconds: 8, count: 2, audio: true },
     { name: 'video i2v portrait start, auto aspect', model: 'ltx25', prompt: '', preset: 'orbit-left', aspect: 'auto', res: '480p', seconds: 3, count: 1, audio: false, start: { token: 'openfield_1_a.png', w: 1080, h: 1920 } },
     { name: 'video flf2v h3 start+end', model: 'h3', prompt: 'she turns and walks away', preset: 'free', aspect: 'auto', res: '720p', seconds: 8, count: 3, audio: true, start: { token: 's.png', w: 1664, h: 928 }, end: { token: 'e.png' } },
+    { name: 'video t2v h3 (no frames)', model: 'h3', prompt: 'a lighthouse in a storm', preset: 'free', aspect: 'auto', res: '720p', seconds: 5, count: 1, audio: false },
     { name: 'loop (start = end)', model: 'ltx25', prompt: 'mist drifts, lanterns sway', preset: 'static', aspect: 'auto', res: '720p', seconds: 5, count: 1, audio: false, start: { token: 'loop.png', w: 1328, h: 1328 }, loop: true, autoFix: true },
     { name: 'loop, auto-fix off', model: 'ltx25', prompt: 'waves roll in', preset: 'static', aspect: 'auto', res: '480p', seconds: 3, count: 2, audio: false, start: { token: 'loop.png', w: 1344, h: 768 }, loop: true, autoFix: false },
   ];
@@ -94,26 +98,33 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     });
     same(c.name, mine, oracle);
   }
-  // Your own LoRAs: LTX-2.5 only, sent as the chip holds them.
-  assert.ok(src.includes("if (model.id === 'ltx25' && loras.length) body.loras = loras;"), 'Video.tsx LoRA rule moved');
+  // Your own LoRAs: LTX-2.5 or MiniMax H3, sent as the chip holds them.
+  assert.ok(src.includes("const picks = model.id === 'h3' ? h3loras : model.id === 'ltx25' ? loras : [];"), 'Video.tsx LoRA rule moved');
+  assert.ok(src.includes('if (picks.length) body.loras = picks;'), 'Video.tsx LoRA rule moved');
   {
-    const model = VIDEO_MODELS.find((m) => m.id === 'ltx25')!;
     const preset = presetById('free');
     const loras = [{ name: 'char.safetensors', strength: 0.9 }];
     const size = run(sizeSrc, { aspect: '16:9', res: '720p', start: undefined, videoFrame });
+    // ltx25
+    const model = VIDEO_MODELS.find((m) => m.id === 'ltx25')!;
     const oracle = expr(bodySrc, { model, compiled: compilePrompt(['a man runs', preset.text]), prompt: 'a man runs', preset, size, seconds: 5, count: 1, audio: false, start: undefined, end: undefined });
     oracle.loras = loras;
     same('video ltx25 + your LoRA', videoBody({ model: 'ltx25', prompt: 'a man runs', preset: 'free', size: videoSize('16:9', '720p'), seconds: 5, count: 1, audio: false, loras }), oracle);
-    assert.throws(() => videoBody({ model: 'h3', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, startImage: 's.png', loras }), /LTX-2.5/);
+    // h3 (also sets lengthFrames)
+    const h3 = VIDEO_MODELS.find((m) => m.id === 'h3')!;
+    const oracle2 = expr(bodySrc, { model: h3, compiled: compilePrompt(['a man runs', preset.text]), prompt: 'a man runs', preset, size, seconds: 5, count: 1, audio: false, start: undefined, end: undefined });
+    oracle2.lengthFrames = secondsToFrames(5);
+    oracle2.loras = loras;
+    same('video h3 + your LoRA', videoBody({ model: 'h3', prompt: 'a man runs', preset: 'free', size: videoSize('16:9', '720p'), seconds: 5, count: 1, audio: false, loras }), oracle2);
   }
   // H3 turbo: the page sends h3Turbo only on H3, as the chip picked it.
   assert.ok(src.includes("if (model.id === 'h3' && turbo) body.h3Turbo = turbo;"), 'Video.tsx H3 turbo rule moved');
   {
     const size = videoSize('16:9', '480p', { w: 1344, h: 768 });
-    const b = videoBody({ model: 'h3', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, startImage: 's.png', turbo: 'v11-4' });
-    assert.equal(b.h3Turbo, 'v11-4');
-    assert.equal(videoBody({ model: 'h3', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, startImage: 's.png' }).h3Turbo, undefined);
-    assert.throws(() => videoBody({ model: 'ltx25', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, turbo: 'v11-4' }), /H3/);
+    const b = videoBody({ model: 'h3', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, turbo: 'turbo' });
+    assert.equal(b.h3Turbo, 'turbo');
+    assert.equal(videoBody({ model: 'h3', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false }).h3Turbo, undefined);
+    assert.throws(() => videoBody({ model: 'ltx25', prompt: 'x', preset: 'free', size, seconds: 5, count: 1, audio: false, turbo: 'turbo' }), /H3/);
     console.log('ok  video h3 turbo');
   }
   // Cast: the page sends castMode only for a hero frame, while @mentions are in play.
@@ -203,10 +214,17 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     ] },
   ] as const) {
     const size = expr(sizeSrc, { mode: 'scene', sizeFor, aspect: c.aspect, videoFrame, res: appTier('scene', c.res) });
-    const list = c.shots.map((x) => ({ ...x, key: undefined, cut: undefined, take: undefined }));
-    const oracle = expr(sceneSrc, { scene: c.scene, picks: c.picks, era: c.era, grade: c.grade, ramp: c.ramp, audio: c.audio, heroFrames: c.heroFrames, imageModel: c.imageModel, size, list });
+    // Fresh-scene shots: the page's key/take/cut are absent, as MCP's are.
+    const oracle = expr(sceneSrc, { scene: c.scene, picks: c.picks, era: c.era, grade: c.grade, ramp: c.ramp, audio: c.audio, heroFrames: c.heroFrames, imageModel: c.imageModel, size, list: c.shots });
     const mine = sceneBody({ scene: c.scene, picks: c.picks as Record<string, string>, era: c.era, grade: c.grade, ramp: c.ramp, audio: c.audio, heroFrames: c.heroFrames, imageModel: c.imageModel, aspect: c.aspect, res: c.res, shots: c.shots.map((x) => ({ ...x, cast: 'cast' in x ? [...x.cast] : undefined })) });
     same(c.name, mine, oracle);
+  }
+  // Contract: an MCP scene shot is always fresh; re-roll bookkeeping is page-side.
+  {
+    const b = wire(sceneBody({ scene: 'a keeper climbs', picks: {}, audio: false, heroFrames: false, imageModel: 'qwen', aspect: '16:9', res: '720p', shots: [{ framing: 'wide', move: 'static', action: 'the keeper climbs the stairs', seconds: 3 }] }));
+    for (const s of b.shots as Record<string, unknown>[]) assert.ok(!('key' in s) && !('take' in s) && !('cut' in s), 'MCP scene shots must not carry page-side key/take/cut bookkeeping');
+    passed++;
+    console.log('ok  mcp scene shots carry no re-roll bookkeeping (key/take/cut are page-side)');
   }
 }
 
@@ -415,7 +433,7 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     const mine = cutoutBody({ source: c.s as any, mode: c.mode, subject: c.subject, background: c.background, color: c.color, backgroundImage: c.bgImage ?? undefined, audio: c.audio });
     same(c.name, mine, oracle);
   }
-  const viewer = readFileSync(join(ROOT, 'src/Viewer.tsx'), 'utf8');
+  const viewer = readSrc('src/Viewer.tsx');
   assert.ok(viewer.includes('navigate(`/cutout?take=${t.id}`)'), 'Viewer.tsx Remove background no longer opens /cutout?take=<id> for clips');
   assert.ok(src.includes("const fromTake = Number(params.get('take')) || null;"), 'Cutout.tsx no longer reads ?take=');
   passed++;
@@ -513,7 +531,7 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     const mine = stageBody({ scene: c.scene, prompt: c.prompt, res: c.res, lookEngine: c.lookEngine, look: c.look ?? undefined, count: c.count, blocking: c.b });
     same(c.name, mine, oracle);
   }
-  const viewer = readFileSync(join(ROOT, 'src/Viewer.tsx'), 'utf8');
+  const viewer = readSrc('src/Viewer.tsx');
   assert.ok(viewer.includes('navigate(`/stage?take=${take.id}`)'), 'Viewer.tsx Open in Stage no longer opens /stage?take=<id>');
   assert.ok(src.includes("const fromTake = Number(params.get('take')) || null;"), 'Stage.tsx no longer reads ?take=');
   assert.ok(viewer.includes('navigate(`/stage?look=${take.id}`)') && src.includes("Number(params.get('look'))"), 'Use as Stage look frame: Viewer and Stage.tsx disagree on /stage?look=<id>');
@@ -536,7 +554,7 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     same(c.name, objectBody(c as any), oracle);
   }
   assert.throws(() => objectBody({ source: { token: 'x', kind: 'video', name: 'v', w: 1, h: 1, seconds: 3 }, quality: 'draft', cutout: true, count: 1 }), /needs a still/);
-  const viewer = readFileSync(join(ROOT, 'src/Viewer.tsx'), 'utf8');
+  const viewer = readSrc('src/Viewer.tsx');
   assert.ok(viewer.includes('navigate(`/object?take=${take.id}`)'), 'Viewer.tsx Make 3D no longer opens /object?take=<id>');
   assert.ok(src.includes("useTakeParam(params.get('take'),"), 'Object.tsx no longer reads ?take=');
   passed++;
@@ -545,9 +563,9 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
 
 // ---------- Viewer.tsx (upscale + continue actions) ----------
 {
-  const src = readFileSync(join(ROOT, 'src/Viewer.tsx'), 'utf8');
+  const src = readSrc('src/Viewer.tsx');
   assert.ok(src.includes('navigate(`/upscale?take=${take.id}`)'), 'Viewer.tsx Upscale no longer opens /upscale?take=<id>');
-  const app = readFileSync(join(ROOT, 'src/pages/Upscale.tsx'), 'utf8');
+  const app = readSrc('src/pages/Upscale.tsx');
   assert.ok(app.includes("const deepTake = Number(params.get('take')) || null;"), 'Upscale.tsx no longer reads ?take=');
   passed++;
   console.log('ok  viewer Upscale deep-links /upscale?take=<id>, which the page reads');
@@ -557,16 +575,39 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
   passed++;
   console.log('ok  continue-actions hand off to Extend, Transition, Speak, Add sound (Viewer.tsx)');
   assert.ok(src.includes('navigate(`/edit?take=${take.id}`)'), 'Viewer.tsx Edit... no longer opens /edit?take=<id>');
-  const edit = readFileSync(join(ROOT, 'src/pages/Edit.tsx'), 'utf8');
+  const edit = readSrc('src/pages/Edit.tsx');
   assert.ok(edit.includes("const fromTake = Number(params.get('take')) || null;"), 'Edit.tsx no longer reads ?take=');
   passed++;
   console.log('ok  viewer Edit... deep-links /edit?take=<id>, which the page reads');
   const hdr = between(src, 'export async function finishHdr(t: Take) {\n  await api.generate(', ');\n  toast(\'Finishing in HDR');
   same('viewer Finish in HDR', hdrBody(7), expr(hdr, { t: { id: 7 } }));
   assert.ok(src.includes("const r = await api.fixSeam(t.id, 'auto');"), 'Viewer.tsx Improve the seam no longer asks for the auto strategy');
-  const apiSrc = readFileSync(join(ROOT, 'src/api.ts'), 'utf8');
+  const apiSrc = readSrc('src/api.ts');
   assert.ok(apiSrc.includes("`/api/takes/${id}/fix-seam`, { method: 'POST', body: JSON.stringify({ strategy }) }"), 'src/api.ts fixSeam body moved');
   same('viewer Improve the seam', fixSeamBody('auto'), expr('{ strategy }', { strategy: 'auto' }));
+}
+
+// ---------- Audio.tsx (Music + Speech) ----------
+{
+  const src = page('Audio.tsx');
+  const musicSrc = between(src, 'api.generate({', '})\n        : await api.generate(');
+  const speechSrc = between(src, ': await api.generate({', "});\n      toast(");
+  for (const c of [
+    { name: 'music turbo, tags + lyrics', tags: 'late night lo-fi, warm vinyl crackle', lyrics: '[verse]\nsoft rain\n[chorus]\nstay a while', model: 'turbo', key: 'E minor', bpm: 120, timesig: '4', language: 'en', seconds: 15, count: 1 },
+    { name: 'music base, lyrics only, 6/8, five minutes, two takes', tags: '', lyrics: '[chorus]\nla la la', model: 'base', key: 'C major', bpm: 90, timesig: '6', language: 'es', seconds: 300, count: 2 },
+  ] as const) {
+    const oracle = expr(`({${musicSrc}})`, { model: c.model, tags: c.tags, lyrics: c.lyrics, key: c.key, bpm: c.bpm, timesig: c.timesig, language: c.language, seconds: c.seconds, count: c.count });
+    same(c.name, musicBody({ tags: c.tags, lyrics: c.lyrics, model: c.model, key: c.key, bpm: c.bpm, timesignature: c.timesig, language: c.language, seconds: c.seconds, count: c.count }), oracle);
+  }
+  assert.throws(() => musicBody({ tags: '   ', lyrics: '', model: 'turbo', key: 'E minor', bpm: 120, timesignature: '4', language: 'en', seconds: 15, count: 1 }), /tags or lyrics/);
+  for (const c of [
+    { name: 'speech, voice described', text: 'Asta la vista, friend. See you on the other side.', instruct: 'a warm, weathered voice, dry and unhurried', lang: 'English', count: 1 },
+    { name: 'speech, no voice words, three takes', text: 'Hello there.', instruct: '', lang: 'Auto', count: 3 },
+  ] as const) {
+    const oracle = expr(`({${speechSrc}})`, { text: c.text, instruct: c.instruct, lang: c.lang, count: c.count });
+    same(c.name, speechBody({ text: c.text, instruct: c.instruct, language: c.lang, count: c.count }), oracle);
+  }
+  assert.throws(() => speechBody({ text: '   ', instruct: '', language: 'Auto', count: 1 }), /words to say/);
 }
 
 console.log(`\n${passed} parity checks passed`);

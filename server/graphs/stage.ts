@@ -102,7 +102,7 @@ export function buildStageShotGraph(p: StageShotParams): Record<string, unknown>
     // ---- decode ----
     dv: { class_type: 'VAEDecodeTiled', inputs: { samples: ['crop2', 2], vae: ['vvae', 0], tile_size: 512, overlap: 64, temporal_size: 128, temporal_overlap: 32 } },
     vid: { class_type: 'CreateVideo', inputs: { images: ['dv', 0], fps: ['clayParts', 2], bit_depth: 8, color_space: 'sRGB', codec: 'none' } },
-    save: { class_type: 'SaveVideo', inputs: { video: ['vid', 0], filename_prefix: p.filenamePrefix ?? 'openfield/stage', format: 'auto', codec: 'auto' } },
+    save: { class_type: 'SaveVideo', inputs: { video: ['vid', 0], filename_prefix: p.filenamePrefix ?? 'morpheus/stage', format: 'auto', codec: 'auto' } },
   };
 }
 
@@ -146,7 +146,7 @@ export function buildStageLookGraph(p: StageLookParams): Record<string, unknown>
       },
     },
     d: { class_type: 'VAEDecode', inputs: { samples: ['k', 0], vae: ['vae', 0] } },
-    save: { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'openfield/stage_look' } },
+    save: { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'morpheus/stage_look' } },
   };
 }
 

@@ -2,15 +2,17 @@
 import { Fragment, Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { api, downloadUrl, finishFileUrl, mediaUrl, posterUrl, subjectUrl, takeAsInput, turntableUrl, workflowUrl, type SeamMeasure, type Take } from './api';
 import { navigate } from './router';
-import { getState, isImage, isModel, refreshTakes, setHandoff, settingsOf, toast, useStore } from './store';
+import { getState, isAudio, isImage, isModel, refreshTakes, setHandoff, settingsOf, toast, useStore } from './store';
 import type { ModelLook } from './ModelView';
 // three.js loads only when a 3D take is opened.
 const ModelView = lazy(() => import('./ModelView'));
 import { Icon, Spill } from './ui';
+import { pause, playerState, playTake, usePlayer } from './playerStore';
 import { DIRECTOR_AXES, IMAGE_MODELS, SPEED_RAMPS, VIDEO_MODELS, editAppById } from './catalog';
 import { effectById } from './effects';
 import { SaveToCast } from './pages/Cast';
 import { useCast } from './castStore';
+import { lineage } from './lineage';
 
 export async function animate(t: Take, loop = false) {
   toast('Sending to Video...');
@@ -28,7 +30,7 @@ export async function animate(t: Take, loop = false) {
 export async function addEffect(t: Take) {
   toast('Sending to Effects...');
   const still = isImage(t);
-  const token = await takeAsInput(t.id, still ? `take_${t.id}.png` : `take_${t.id}.mp4`);
+  const token = await takeAsInput(t.id);
   setHandoff({ refs: [{ token, role: 'start', kind: still ? 'image' : 'video', name: `take ${t.id}` }] });
   navigate(`/effects?effect=${still ? 'living-photo' : 'cutout'}`);
 }
@@ -115,6 +117,38 @@ export async function remove(t: Take) {
   await refreshTakes();
 }
 
+/** What engine + app made a take, in one line (the Viewer's "Model" row). */
+function modelLabel(t: Take): string {
+  const s = settingsOf(t);
+  const image = isImage(t);
+  const object = isModel(t);
+  const cutoutBg = s.background === 'color' ? `over ${s.color}` : s.background === 'blur' ? 'blurred background' : s.background === 'image' ? 'new background' : 'transparent';
+  return object ? `Object · TRELLIS.2 ${s.quality === 'quality' ? 'high' : 'draft'}`
+    : s.app === 'cutout' ? `Remove background · ${image ? 'BiRefNet' : s.mode === 'track' ? 'SAM 3.1 track' : s.mode === 'matte' ? 'BiRefNet' : 'BiRefNet + SAM 3.1'} · ${cutoutBg}`
+    : s.app === 'restyle' ? `Restyle · ${s.styleName ?? 'custom look'} · Qwen-Image-Edit + LTX-2.5`
+    : s.app === 'swap' ? 'Object swap · SAM 3.1 + Qwen-Image-Edit + LTX-2.5 inpaint'
+    : s.app === 'seam' ? `Seam fix · ${s.mode === 'trim' ? 'trim' : s.mode === 'regen' ? 'wrap re-rendered · LTX-2.5' : s.mode === 'reseed' ? 'new seed' : 'bridge · LTX-2.5'}`
+    : s.app === 'hdr' ? 'Finish in HDR · LTX-2.5 SDR to HDR'
+    : s.app === 'stage' ? (image ? `Stage look frame · ${s.engine === 'edit' ? 'Qwen-Image-Edit on the clay' : 'Z-Image Turbo on the depth pass'}` : 'Stage · LTX-2.5 Layout to Render')
+    : s.castEngine === 'compose' ? `Cast${s.app === 'cast' ? ' hero frame' : ''} · Qwen-Image-Edit 2509${s.quality === 'draft' ? ' draft' : ''}`
+    : s.castEngine === 'sheet' ? 'Cast · LTX-2.5 Ingredients IC-LoRA'
+    : s.app === 'upscale' ? `Upscale · ${s.mode === 'redraw' ? `Redraw · SeedVR2 ${String(s.model).toUpperCase()}` : s.mode === 'dream' ? 'Dream · LTX-2.5' : 'Sharpen'}`
+    : image
+    ? s.app === 'edit' ? `${editAppById(s.mode ?? 'free').name} · Qwen-Image-Edit${s.quality === 'draft' ? ' draft' : ''}`
+    : IMAGE_MODELS.find((m) => m.id === s.model)?.label ?? s.model
+    : t.kind === 'upres' ? 'Upscale 2x'
+    : s.app === 'mirror' ? `Mirror · ${s.control ?? 'pose'} · LTX-2.5`
+    : s.app === 'reshoot' ? 'Reshoot · LTX'
+    : s.app === 'effects' ? `Effect · ${effectById(s.effect)?.name ?? s.effect} · LTX-2.5`
+    : s.app === 'extend' ? `Extend ${s.direction === 'backward' ? 'backward' : 'forward'} · LTX-2.5`
+    : s.app === 'transition' ? 'Transition · LTX-2.5'
+    : s.app === 'speak' ? 'Speak · LTX-2.5 audio to video'
+    : s.app === 'sound' ? 'Add sound · LTX-2.5 video to audio'
+    : s.app === 'audio' ? (s.model === 'qwen3-tts' ? 'Audio · Speech · Qwen3-TTS 1.7B VoiceDesign' : `Audio · Music · ACE-Step 1.5 ${s.model === 'base' ? 'Base · 30 steps' : 'Turbo · 8 steps'}`)
+    : s.cut ? `Director scene · ${(s.shots ?? []).length} shots · LTX-2.5`
+    : VIDEO_MODELS.find((m) => m.id === s.videoModel)?.label ?? s.videoModel;
+}
+
 /**
  * The ComfyUI workflow behind a take. ComfyUI 0.38 loads an API-format graph
  * when the .json file, or a link to it, is dropped on its canvas; pasting the
@@ -167,11 +201,23 @@ function ComfyWorkflow({ take }: { take: Take }) {
 }
 
 export default function Viewer({ takeId, onClose, onStep }: { takeId: number; onClose: () => void; onStep: (dir: 1 | -1) => void }) {
-  const take = useStore((s) => s.takes.find((x) => x.id === takeId));
+  // The take on display. Starts at the prop; lineage steps move it. A new prop
+  // (a different asset opened, or an arrow-key step from the parent page) resets it.
+  const [currentId, setCurrentId] = useState(takeId);
+  const [compare, setCompare] = useState(false);
+  const take = useStore((s) => s.takes.find((x) => x.id === currentId));
+  const allTakes = useStore((s) => s.takes);
   const [casting, setCasting] = useState(false);
   const [look, setLook] = useState<ModelLook>('lit');
   const cast = useCast();
-  useEffect(() => { setCasting(false); }, [takeId]);
+  const playingThis = usePlayer((p) => p.current === currentId && p.playing);
+  useEffect(() => { setCasting(false); setCompare(false); setCurrentId(takeId); }, [takeId]);
+  // Opening an audio take starts it in the popup player (its old autoPlay).
+  useEffect(() => {
+    const t = getState().takes.find((x) => x.id === currentId);
+    if (t && isAudio(t) && t.status === 'done' && playerState().current !== t.id) playTake(t.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentId]);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -185,69 +231,77 @@ export default function Viewer({ takeId, onClose, onStep }: { takeId: number; on
   const s = settingsOf(take);
   const image = isImage(take);
   const object = isModel(take);
-  const cutoutBg = s.background === 'color' ? `over ${s.color}` : s.background === 'blur' ? 'blurred background' : s.background === 'image' ? 'new background' : 'transparent';
-  const model = object ? `Object · TRELLIS.2 ${s.quality === 'quality' ? 'high' : 'draft'}`
-    : s.app === 'cutout' ? `Remove background · ${image ? 'BiRefNet' : s.mode === 'track' ? 'SAM 3.1 track' : s.mode === 'matte' ? 'BiRefNet' : 'BiRefNet + SAM 3.1'} · ${cutoutBg}`
-    : s.app === 'restyle' ? `Restyle · ${s.styleName ?? 'custom look'} · Qwen-Image-Edit + LTX-2.5`
-    : s.app === 'swap' ? 'Object swap · SAM 3.1 + Qwen-Image-Edit + LTX-2.5 inpaint'
-    : s.app === 'seam' ? `Seam fix · ${s.mode === 'trim' ? 'trim' : s.mode === 'regen' ? 'wrap re-rendered · LTX-2.5' : s.mode === 'reseed' ? 'new seed' : 'bridge · LTX-2.5'}`
-    : s.app === 'hdr' ? 'Finish in HDR · LTX-2.5 SDR to HDR'
-    : s.app === 'stage' ? (image ? `Stage look frame · ${s.engine === 'edit' ? 'Qwen-Image-Edit on the clay' : 'Z-Image Turbo on the depth pass'}` : 'Stage · LTX-2.5 Layout to Render')
-    : s.castEngine === 'compose' ? `Cast${s.app === 'cast' ? ' hero frame' : ''} · Qwen-Image-Edit 2509${s.quality === 'draft' ? ' draft' : ''}`
-    : s.castEngine === 'sheet' ? 'Cast · LTX-2.5 Ingredients IC-LoRA'
-    : s.app === 'upscale' ? `Upscale · ${s.mode === 'redraw' ? `Redraw · SeedVR2 ${String(s.model).toUpperCase()}` : s.mode === 'dream' ? 'Dream · LTX-2.5' : 'Sharpen'}`
-    : image
-    ? s.app === 'edit' ? `${editAppById(s.mode ?? 'free').name} · Qwen-Image-Edit${s.quality === 'draft' ? ' draft' : ''}`
-    : IMAGE_MODELS.find((m) => m.id === s.model)?.label ?? s.model
-    : take.kind === 'upres' ? 'Upscale 2x'
-    : s.app === 'mirror' ? `Mirror · ${s.control ?? 'pose'} · LTX-2.5`
-    : s.app === 'reshoot' ? 'Reshoot · LTX'
-    : s.app === 'effects' ? `Effect · ${effectById(s.effect)?.name ?? s.effect} · LTX-2.5`
-    : s.app === 'extend' ? `Extend ${s.direction === 'backward' ? 'backward' : 'forward'} · LTX-2.5`
-    : s.app === 'transition' ? 'Transition · LTX-2.5'
-    : s.app === 'speak' ? 'Speak · LTX-2.5 audio to video'
-    : s.app === 'sound' ? 'Add sound · LTX-2.5 video to audio'
-    : s.cut ? `Director scene · ${(s.shots ?? []).length} shots · LTX-2.5`
-    : VIDEO_MODELS.find((m) => m.id === s.videoModel)?.label ?? s.videoModel;
+  const audio = isAudio(take);
+  // The words that went in: tags and lyrics for music, the words and the voice for speech.
+  const audioText = audio
+    ? (s.model === 'qwen3-tts'
+      ? [s.text, s.instruct ? `Voice: ${s.instruct}` : ''].filter(Boolean).join('\n\n')
+      : [s.tags, s.lyrics].filter(Boolean).join('\n\n'))
+    : '';
+  const model = modelLabel(take);
+  // What this take was made from, if any (edit, upscale, mirror, ...).
+  const parent = take.parent_take_id != null ? allTakes.find((x) => x.id === take.parent_take_id) : undefined;
 
   const act = (fn: () => Promise<unknown>) => () => void fn().catch((e) => toast(e instanceof Error ? e.message : 'failed', true));
   // Secondary transforms. On a video take they sit under "More..." so the grid stays short.
   const done = take.status === 'done';
   const more: MoreItem[] = [
-    !image && done && { label: 'Restyle', icon: 'palette', title: 'Same motion, a new look', run: () => { onClose(); navigate(`/mirror?mode=restyle&take=${take.id}`); } },
-    done && s.app !== 'cutout' && { label: 'Remove background', icon: 'cutout', run: act(async () => { onClose(); await removeBackground(take); }) },
-    { label: 'Add effect', icon: 'sparkle', run: act(() => addEffect(take)) },
-    !image && { label: 'Add sound', icon: 'audio', run: () => { onClose(); navigate(`/speak?mode=sound&take=${take.id}`); } },
-    !image && done && s.app !== 'hdr' && { label: 'Finish in HDR', icon: 'sparkle', title: 'ACEScg EXR sequence and an HLG master, from LTX-2.5 SDR to HDR', run: act(() => finishHdr(take)) },
-    !image && done && { label: 'Improve the seam', icon: 'loop', title: 'Measure the loop point and try to lower it: trim, regenerate the wrap, or a new seed. Each try is a new take; the original is kept', run: act(() => fixSeam(take)) },
+    !image && !audio && done && { label: 'Restyle', icon: 'palette', title: 'Same motion, a new look', run: () => { onClose(); navigate(`/mirror?mode=restyle&take=${take.id}`); } },
+    done && s.app !== 'cutout' && !audio && { label: 'Remove background', icon: 'cutout', run: act(async () => { onClose(); await removeBackground(take); }) },
+    !audio && { label: 'Add effect', icon: 'sparkle', run: act(() => addEffect(take)) },
+    !image && !audio && { label: 'Add sound', icon: 'audio', run: () => { onClose(); navigate(`/speak?mode=sound&take=${take.id}`); } },
+    !image && !audio && done && s.app !== 'hdr' && { label: 'Finish in HDR', icon: 'sparkle', title: 'ACEScg EXR sequence and an HLG master, from LTX-2.5 SDR to HDR', run: act(() => finishHdr(take)) },
+    !image && !audio && done && { label: 'Improve the seam', icon: 'loop', title: 'Measure the loop point and try to lower it: trim, regenerate the wrap, or a new seed. Each try is a new take; the original is kept', run: act(() => fixSeam(take)) },
   ].filter((m): m is MoreItem => !!m);
 
   return (
     <div className="viewer-back" onClick={onClose}>
-      <Spill src={posterUrl(take.id)} key={take.id} />
+      {!audio && <Spill src={posterUrl(take.id)} key={take.id} />}
       <div className="viewer-stage" onClick={(e) => e.stopPropagation()}>
-        {object && take.status === 'done'
-          ? <ObjectStage take={take} look={look} onLook={setLook} />
-          : image
-          ? <img src={mediaUrl(take.id)} alt="" className={s.app === 'cutout' && s.background === 'transparent' ? 'checker' : undefined} />
-          : <video src={mediaUrl(take.id)} controls autoPlay muted loop playsInline />}
+        {compare && parent
+          ? <CompareStage a={parent} b={take} />
+          : (<>
+            {object && take.status === 'done'
+              ? <ObjectStage take={take} look={look} onLook={setLook} />
+              : image
+              ? <img src={mediaUrl(take.id)} alt="" className={s.app === 'cutout' && s.background === 'transparent' ? 'checker' : undefined} />
+              : audio
+              ? (
+                <div className="viewer-audio">
+                  <div className="viewer-audio-note"><Icon name="audio" size={64} /></div>
+                  <div className="label" style={{ margin: '14px 0 10px' }}>{audioText || s.userPrompt || s.prompt}</div>
+                  <button type="button" className={`btn ${playingThis ? '' : 'accent'}`}
+                    onClick={() => (playingThis ? pause() : playTake(take.id))}>
+                    <Icon name={playingThis ? 'pause' : 'play'} size={15} />
+                    {playingThis ? 'Pause' : 'Play in the player'}
+                  </button>
+                  <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>Live visualizer, waveform, stats and transport in the popup player.</div>
+                </div>
+              )
+              : <video src={mediaUrl(take.id)} controls autoPlay muted loop playsInline />}
+          </>)}
         <button type="button" className="icon-btn" style={{ position: 'absolute', top: 16, left: 16 }} onClick={onClose} aria-label="close"><Icon name="x" /></button>
       </div>
       <aside className="viewer-side" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span className="label">{object ? '3D' : image ? 'Image' : 'Video'} · #{take.id}</span>
+          <span className="label">{object ? '3D' : image ? 'Image' : audio ? 'Audio' : 'Video'} · #{take.id}</span>
           <button type="button" className={`icon-btn ${take.starred ? 'on' : ''}`} onClick={act(() => api.star(take.id, !take.starred).then(refreshTakes))} aria-label="favorite"><Icon name="heart" /></button>
         </div>
+        <LineageStrip take={take} takes={allTakes} onOpen={(id) => { setCompare(false); setCurrentId(id); }} />
+        {compare && parent && <SettingsDiff a={parent} b={take} />}
         <div>
-          <div className="label" style={{ marginBottom: 6 }}>Prompt</div>
-          <div className="viewer-prompt">{s.userPrompt || s.prompt || s.instruction}</div>
+          <div className="label" style={{ marginBottom: 6 }}>{audio ? (s.model === 'qwen3-tts' ? 'Words' : 'Tags and lyrics') : 'Prompt'}</div>
+          <div className="viewer-prompt">{audio ? audioText : (s.userPrompt || s.prompt || s.instruction)}</div>
           {s.prompt && s.userPrompt && s.prompt !== s.userPrompt && (
             <details style={{ marginTop: 8 }}>
               <summary className="label" style={{ cursor: 'pointer' }}>Compiled prompt</summary>
               <div className="compiled" style={{ marginTop: 6 }}>{s.prompt}</div>
             </details>
           )}
-          <button type="button" className="btn sm ghost" style={{ marginTop: 6 }} onClick={() => { void navigator.clipboard.writeText(s.prompt ?? ''); toast('Prompt copied'); }}>Copy prompt</button>
+          <button type="button" className="btn sm ghost" style={{ marginTop: 6 }}
+            onClick={() => { void navigator.clipboard.writeText(audio ? audioText : (s.prompt ?? '')); toast(audio ? 'Copied' : 'Prompt copied'); }}>
+            {audio ? 'Copy' : 'Copy prompt'}
+          </button>
         </div>
         {object ? (
           <div className="viewer-actions">
@@ -260,6 +314,7 @@ export default function Viewer({ takeId, onClose, onStep }: { takeId: number; on
           </div>
         ) : (
         <div className="viewer-actions">
+          {parent && <button type="button" className={`btn sm ${compare ? 'accent' : ''}`} onClick={() => setCompare(!compare)} title={compare ? 'Back to this take alone' : `Side by side with what it was made from (#${parent.id})`}><Icon name={compare ? 'x' : 'layers'} size={14} />{compare ? 'Exit compare' : 'Compare with source'}</button>}
           {s.app === 'stage' && s.scene && <button type="button" className="btn sm accent" onClick={() => { onClose(); navigate(`/stage?take=${take.id}`); }} title="Load this take's set, camera and look back into Stage"><Icon name="camera" size={14} />Open in Stage</button>}
           {image && take.status === 'done' && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/object?take=${take.id}`); }} title="A textured 3D model of the subject, from this still"><Icon name="cube" size={14} />Make 3D</button>}
           {image && take.status === 'done' && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/stage?look=${take.id}`); }} title="Open Stage with this still as the look frame, cropped to the shot if it needs to be"><Icon name="camera" size={14} />Use as Stage look frame</button>}
@@ -267,9 +322,9 @@ export default function Viewer({ takeId, onClose, onStep }: { takeId: number; on
           {image && <button type="button" className="btn sm" onClick={act(() => animate(take, true))}><Icon name="loop" size={14} />Make a loop</button>}
           {image && take.status === 'done' && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/edit?take=${take.id}`); }} title="Edit, new angle, relight, expand and more"><Icon name="wand" size={14} />Edit...</button>}
           {image && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/speak?take=${take.id}`); }}><Icon name="person" size={14} />Speak</button>}
-          {take.kind !== 'upres' && s.app !== 'upscale' && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/upscale?take=${take.id}`); }}><Icon name="up" size={14} />Upscale</button>}
-          {!image && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/extend?take=${take.id}`); }}><Icon name="plus" size={14} />Extend</button>}
-          <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/extend?mode=transition&take=${take.id}`); }}><Icon name="loop" size={14} />Transition to...</button>
+          {take.kind !== 'upres' && s.app !== 'upscale' && !audio && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/upscale?take=${take.id}`); }}><Icon name="up" size={14} />Upscale</button>}
+          {!image && !audio && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/extend?take=${take.id}`); }}><Icon name="plus" size={14} />Extend</button>}
+          {!audio && <button type="button" className="btn sm" onClick={() => { onClose(); navigate(`/extend?mode=transition&take=${take.id}`); }}><Icon name="loop" size={14} />Transition to...</button>}
           {image ? more.map((m) => (
             <button key={m.label} type="button" className="btn sm" onClick={m.run} title={m.title}><Icon name={m.icon} size={14} />{m.label}</button>
           )) : more.length > 0 && <MoreMenu items={more} />}
@@ -279,6 +334,7 @@ export default function Viewer({ takeId, onClose, onStep }: { takeId: number; on
             navigate('/video');
           })} title="Use as the end frame of a new video"><Icon name="ref" size={14} />As end frame</button>}
           {image && take.status === 'done' && <button type="button" className={`btn sm ${casting ? 'on' : ''}`} onClick={() => setCasting(!casting)} title="Keep this face, prop or place and @mention it in any prompt"><Icon name="person" size={14} />Save to cast</button>}
+          {audio && take.status === 'done' && <button type="button" className="btn sm accent" onClick={() => { onClose(); navigate(`/speak?take=${take.id}`); }} title="A talking shot: a face with this voice on it"><Icon name="person" size={14} />Make it talk</button>}
           <button type="button" className="btn sm" onClick={act(() => recreate(take))}><Icon name="redo" size={14} />Recreate</button>
           <a className="btn sm" href={downloadUrl(take.id)}><Icon name="download" size={14} />Download{s.alphaPath ? ' preview' : ''}</a>
           {s.alphaPath && <a className="btn sm accent" href={`/api/media/${take.id}?alpha=1`}><Icon name="download" size={14} />ProRes 4444 with alpha</a>}
@@ -297,7 +353,7 @@ export default function Viewer({ takeId, onClose, onStep }: { takeId: number; on
           {object ? <>
             <dt>Mesh</dt><dd>up to {Number(s.faces).toLocaleString()} faces · {s.texture}px textures{s.quality === 'quality' ? ' · normal and AO maps' : ''}</dd>
             <dt>Subject</dt><dd>{s.removeBackground === false ? "the picture's own transparency" : 'cut out by BiRefNet'}</dd>
-          </> : <><dt>Size</dt><dd>{s.width}x{s.height}</dd></>}
+           </> : !audio && <><dt>Size</dt><dd>{s.width}x{s.height}</dd></>}
           {!image && !object && s.seconds && <><dt>Length</dt><dd>{s.outSeconds ? `${s.outSeconds}s (shot ${s.seconds}s)` : `${s.seconds}s`}</dd></>}
           {s.picks?.genre && s.picks.genre !== 'auto' && <><dt>Genre</dt><dd>{DIRECTOR_AXES[0].options.find((o) => o.id === s.picks.genre)?.label ?? s.picks.genre}</dd></>}
           {s.era != null && <><dt>Era</dt><dd>{s.era}{s.eraGraded ? ', graded' : s.cut && s.eraGrade !== false ? ', graded per shot' : ', prompt only'}</dd></>}
@@ -423,6 +479,87 @@ function ObjectStage({ take, look, onLook }: { take: Take; look: ModelLook; onLo
         ))}
       </div>
       <img className="object-subject" src={subjectUrl(take.id)} alt="" title="The subject as the model saw it" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+    </div>
+  );
+}
+
+/** The take's parent chain, oldest first; each step jumps to it. Hidden when there is nothing to show. */
+function LineageStrip({ take, takes, onOpen }: { take: Take; takes: Take[]; onOpen: (id: number) => void }) {
+  const chain = lineage(takes, take.id);
+  const children = takes.filter((x) => x.parent_take_id === take.id);
+  if (chain.length < 2 && children.length === 0) return null;
+  const appOf = (t: Take) => settingsOf(t).app ?? t.kind;
+  return (
+    <div>
+      <div className="label" style={{ marginBottom: 6 }}>Lineage{children.length > 0 ? ` · ${children.length} made from this` : ''}</div>
+      <div className="lineage">
+        {chain.map((c, i) => (
+          <button key={c.id} type="button"
+            className={`lineage-step ${c.id === take.id ? 'now' : ''}`}
+            disabled={c.id === take.id}
+            onClick={() => onOpen(c.id)}
+            title={i === chain.length - 1 ? 'This take' : `Made by ${appOf(c)} · #${c.id}`}>
+            <span className="lineage-thumb">{isAudio(c) ? <Icon name="audio" size={14} /> : <img src={posterUrl(c.id)} alt="" />}</span>
+            <span className="lineage-app">{appOf(c)}</span>
+            <span className="lineage-id">#{c.id}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** One side of a before/after comparison, with a plain media render (no player, no 3D). */
+function ComparePane({ t, tag }: { t: Take; tag: string }) {
+  const s = settingsOf(t);
+  return (
+    <div className="compare-pane">
+      <div className="compare-tag">{tag}</div>
+      {isAudio(t)
+        ? <div className="compare-audio"><Icon name="audio" size={40} /><div className="dim" style={{ fontSize: 12 }}>{s.text ?? s.tags ?? s.userPrompt}</div></div>
+        : isImage(t)
+        ? <img src={mediaUrl(t.id)} alt="" className={s.app === 'cutout' && s.background === 'transparent' ? 'checker' : undefined} />
+        : isModel(t)
+        ? <img src={posterUrl(t.id)} alt="" />
+        : <video src={mediaUrl(t.id)} controls muted loop playsInline />}
+    </div>
+  );
+}
+
+/** Side by side: the take it was made from, and the take itself. */
+function CompareStage({ a, b }: { a: Take; b: Take }) {
+  return (
+    <div className="compare">
+      <ComparePane t={a} tag={`Source · #${a.id}`} />
+      <div className="compare-divider" />
+      <ComparePane t={b} tag={`Result · #${b.id}`} />
+    </div>
+  );
+}
+
+/** How the source and the result differ: model, seed, size, length, prompt. */
+function SettingsDiff({ a, b }: { a: Take; b: Take }) {
+  const sa = settingsOf(a), sb = settingsOf(b);
+  const val = (v: unknown) => (v == null || v === '' ? '—' : String(v));
+  const rows: [string, string, string][] = [
+    ['Model', modelLabel(a), modelLabel(b)],
+    ['Seed', val(sa.seed), val(sb.seed)],
+    ['Size', sa.width ? `${sa.width}×${sa.height}` : '—', sb.width ? `${sb.width}×${sb.height}` : '—'],
+    ['Length', sa.seconds ? `${sa.seconds}s` : '—', sb.seconds ? `${sb.seconds}s` : '—'],
+    ['Prompt', val(sa.userPrompt ?? sa.prompt ?? sa.instruction), val(sb.userPrompt ?? sb.prompt ?? sb.instruction)],
+  ];
+  return (
+    <div>
+      <div className="label" style={{ marginBottom: 6 }}>What changed</div>
+      <table className="diff">
+        <tbody>
+          {rows.map(([k, av, bv]) => (
+            <tr key={k} className={av !== bv ? 'differs' : 'same'}>
+              <th>{k}</th><td>{av}</td><td>{bv}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

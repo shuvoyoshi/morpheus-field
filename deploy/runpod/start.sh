@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# OpenField judge preview, Runpod entrypoint.
+# Morpheus judge preview, Runpod entrypoint.
 #
 #  1. Puts models, job history and renders on the network volume (/workspace).
 #  2. Downloads the core bundles and the judge demo bundles there, once
 #     (resumable: a restarted pod picks up where it stopped).
 #  3. Starts ComfyUI (--preview-method auto) on loopback.
-#  4. Starts OpenField in judge mode on 0.0.0.0:3161, which also starts
+#  4. Starts Morpheus in judge mode on 0.0.0.0:3161, which also starts
 #     comfy-api-proxy. Open it through Runpod's HTTP proxy:
 #     https://<pod id>-3161.proxy.runpod.net
 #
@@ -110,9 +110,9 @@ until curl -fsS "http://127.0.0.1:${COMFY_PORT}/system_stats" >/dev/null 2>&1; d
 done
 log "ComfyUI is up after ${waited}s."
 
-# ------------------------------------------------------------- OpenField ----
+# ------------------------------------------------------------- Morpheus ----
 cd "$OPENFIELD_DIR"
-log "Starting OpenField in judge mode on ${OPENFIELD_HOST}:${OPENFIELD_PORT} (cap ${OPENFIELD_JUDGE_CAP:-20} renders a day)."
+log "Starting Morpheus in judge mode on ${OPENFIELD_HOST}:${OPENFIELD_PORT} (cap ${OPENFIELD_JUDGE_CAP:-20} renders a day)."
 if [ -n "${RUNPOD_POD_ID:-}" ]; then
   log "Open https://${RUNPOD_POD_ID}-${OPENFIELD_PORT}.proxy.runpod.net"
 fi

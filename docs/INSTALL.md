@@ -1,10 +1,10 @@
-# Installing OpenField
+# Installing Morpheus
 
 A full walkthrough, starting from a machine with nothing on it. If you already
 run ComfyUI, skip to step 3.
 
 If you would rather not do this by hand, open this repository in Claude Code and
-say "set up OpenField". [`../CLAUDE.md`](../CLAUDE.md) contains the instructions for
+say "set up Morpheus". [`../CLAUDE.md`](../CLAUDE.md) contains the instructions for
 an agent to run the whole thing.
 
 ---
@@ -58,11 +58,11 @@ curl -s http://127.0.0.1:8188/system_stats
 ```
 
 Leave it running. `--preview-method auto` turns on the live step-by-step
-previews in OpenField's render cards.
+previews in Morpheus's render cards.
 
 ### The Comfy API v2 proxy
 
-OpenField runs every job through the Comfy SDK, which speaks Comfy API v2. A
+Morpheus runs every job through the Comfy SDK, which speaks Comfy API v2. A
 self-hosted ComfyUI gets v2 from comfy-api-proxy, a small open-source service
 that sits next to it:
 
@@ -77,12 +77,12 @@ and Debian 12), use `pipx` as above, or a virtual environment:
 ```bash
 python3 -m venv ~/.venvs/comfy-api-proxy
 ~/.venvs/comfy-api-proxy/bin/pip install comfy-api-proxy
-# then in OpenField's .env:
+# then in Morpheus's .env:
 # COMFY_PROXY_BIN=/home/you/.venvs/comfy-api-proxy/bin/comfy-api-proxy
 ```
 
 You do not have to keep it running yourself: if `comfy-api-proxy` is on your
-PATH (or named by `COMFY_PROXY_BIN` in `.env`), the OpenField server starts it
+PATH (or named by `COMFY_PROXY_BIN` in `.env`), the Morpheus server starts it
 when the v2 API is not answering, with its job state in `data/proxy/`.
 
 **Comfy Cloud (experimental).** Local ComfyUI behind the proxy is the supported
@@ -128,7 +128,7 @@ pip install -r ComfyUI-SeedVR2_VideoUpscaler/requirements.txt
 ```
 
 The SeedVR2 pack downloads any model it is asked for that is missing, up to
-16 GB, on first use. OpenField checks `models/SEEDVR2/` first and refuses to
+16 GB, on first use. Morpheus checks `models/SEEDVR2/` first and refuses to
 start a Redraw whose weights are not there, so fetch them with
 `npm run models -- --only seedvr2` where you can watch it.
 
@@ -146,7 +146,7 @@ Everything else in the manifest downloads without a token.
 
 ---
 
-## 3. OpenField
+## 3. Morpheus
 
 ```bash
 git clone https://github.com/wexloops/openfield.git
@@ -214,9 +214,8 @@ npm run models -- --only seedvr2           # Upscale Redraw (3B + 7B + VAE). 23.
 npm run models -- --only dream             # Upscale Dream. No weights beyond ltx25; checks VideoHelperSuite
 npm run models -- --only ltx-tools         # Extend, Transitions, Add sound. No weights; checks the node packs
 npm run models -- --only flux2             # FLUX.2 stills. 50.9 GB, NON-COMMERCIAL
-npm run models -- --only h3                # MiniMax H3 video. 42.5 GB, GEO-RESTRICTED
-npm run models -- --only h3-refs           # H3 Refs mode. 21 GB, GEO-RESTRICTED
-npm run models -- --only h3-turbo          # H3 4 and 8 step distills. 8 GB, GEO-RESTRICTED
+npm run models -- --only h3                # MiniMax H3 video. 21.5 GB (the all-in-one checkpoint is added by hand), GEO-RESTRICTED
+npm run models -- --only h3-turbo          # H3 8-step turbo distill. 2 GB, GEO-RESTRICTED
 npm run models -- --all                    # everything, about 334 GB
 ```
 
@@ -273,7 +272,7 @@ Mirror and Reshoot have a **Use your phone** button. It shows a QR code; scan it
 with a phone on the same Wi-Fi, film the move (or pick a clip), and it lands in
 the clip slot on screen.
 
-The main OpenField server never leaves loopback. While the code is showing, and
+The main Morpheus server never leaves loopback. While the code is showing, and
 only then, a second listener opens on this machine's LAN address
 (`OPENFIELD_PHONE_PORT`, default 3162). It serves one mobile page and accepts one
 upload, both behind a random single-use token that only exists in the QR code.
@@ -292,12 +291,29 @@ PowerShell (the app shows these lines with your addresses filled in):
 
 ```powershell
 netsh interface portproxy add v4tov4 listenaddress=<windows-lan-ip> listenport=3162 connectaddress=<wsl-ip> connectport=3162
-New-NetFirewallRule -DisplayName "OpenField phone" -Direction Inbound -Protocol TCP -LocalPort 3162 -Action Allow -Profile Private
+New-NetFirewallRule -DisplayName "Morpheus phone" -Direction Inbound -Protocol TCP -LocalPort 3162 -Action Allow -Profile Private
 ```
 
 Mirrored mode can still need Hyper-V's firewall opened for the port; the app
 shows that command under "Phone can't connect?". The forwarded port only reaches
 something while a phone code is showing.
+
+### Opening the whole app on your phone
+
+Setup has a second phone feature, **Open on your phone**: scan the code and the
+whole app opens in your phone's browser — the library, live renders, the queue —
+as a second desktop paired to this machine.
+
+While a pairing is live, and only then, a second listener opens on the LAN
+(`OPENFIELD_PHONE_APP_PORT`, default 3163) that reverse-proxies the app. The
+gate is a random token: it travels once in the QR code, then lives in an
+HttpOnly cookie the proxy checks on every request, including the live
+websocket. The pairing lasts an hour, or until you press Disconnect, or until
+a new pairing replaces it. The same WSL2 and firewall notes above apply, with
+the pairing's port.
+
+The pairing carries full app privileges — it is your studio on your LAN, behind
+a secret. The main server still never leaves loopback.
 
 ## Troubleshooting
 
@@ -306,7 +322,7 @@ Check `curl http://127.0.0.1:8188/system_stats` and set `COMFY_URL` to match.
 
 **The MODELS chip says something is missing, but the file is there.** ComfyUI
 only rescans model folders at startup. Restart it. If it still cannot see the
-file, the name is wrong: OpenField resolves models by exact filename, so a
+file, the name is wrong: Morpheus resolves models by exact filename, so a
 `-fp8` where the manifest says `_fp8` is a different file as far as it is
 concerned. Compare against [`MODELS.md`](MODELS.md).
 
@@ -314,7 +330,7 @@ concerned. Compare against [`MODELS.md`](MODELS.md).
 logged in, then check `HF_TOKEN` is set in `.env`.
 
 **Out of memory during a video render.** Drop to the ITERATE resolution preset,
-shorten the clip, and close anything else holding the GPU. OpenField warns in the
+shorten the clip, and close anything else holding the GPU. Morpheus warns in the
 header when the card has almost no free VRAM while its own queue is empty, which
 usually means another program has it.
 
@@ -327,7 +343,7 @@ inotify, such as a Windows drive mounted into WSL, Vite cannot watch files.
 Restart `npm run dev` and hard-refresh.
 
 **Renders succeed but nothing lands.** Check the project folder path. It is a
-path on the machine running the OpenField server. Under WSL that means `/mnt/e/...`, not
+path on the machine running the Morpheus server. Under WSL that means `/mnt/e/...`, not
 `E:\...`; a Windows-style path creates a literally named directory.
 
 ---
@@ -363,10 +379,10 @@ Python; it says so, and you run those `pip install` lines from Windows.
 (`powershell -ExecutionPolicy Bypass -File scripts\install.ps1`, with
 `-DryRun` and `-Yes`), and finds a venv or portable ComfyUI's Python. Node,
 ComfyUI, comfy-api-proxy, curl and ffmpeg all run on Windows and `npm start`
-no longer depends on a Unix shell, but OpenField has not been run end to end on
+no longer depends on a Unix shell, but Morpheus has not been run end to end on
 native Windows. If anything misbehaves there, use WSL2 and `install.sh`.
 
-**A preview for other people.** To put OpenField on the internet for a while
+**A preview for other people.** To put Morpheus on the internet for a while
 (contest judges, a demo), do not open your own machine: see
 [`RUNPOD.md`](RUNPOD.md) for a password-gated judge mode on a rented GPU.
 

@@ -67,7 +67,7 @@ function qwenGraph(p: StillsParams): Record<string, unknown> {
       },
     },
     d: { class_type: 'VAEDecode', inputs: { samples: ['k', 0], vae: ['v', 0] } },
-    save: { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'OpenField_still' } },
+    save: { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'Morpheus_still' } },
   };
   if (draft) {
     g.lora = {
@@ -109,7 +109,7 @@ function flux2Graph(p: StillsParams): Record<string, unknown> {
       inputs: { noise: ['noise', 0], guider: ['guider', 0], sampler: ['sampler', 0], sigmas: ['sched', 0], latent_image: ['lat', 0] },
     },
     d: { class_type: 'VAEDecode', inputs: { samples: ['sca', 0], vae: ['v', 0] } },
-    save: { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'OpenField_still' } },
+    save: { class_type: 'SaveImage', inputs: { images: ['d', 0], filename_prefix: 'Morpheus_still' } },
   };
   if (draft) {
     g.lora = {

@@ -1,6 +1,6 @@
 # Workflows
 
-Every OpenField app is a plain ComfyUI workflow. These are those workflows in
+Every Morpheus app is a plain ComfyUI workflow. These are those workflows in
 ComfyUI's API format, written by `npm run workflows` from the same graph
 builders in [`server/graphs/`](../server/graphs) that the app runs. This file
 is generated with them; edit `scripts/export-workflows.ts`, not this file.
@@ -14,7 +14,7 @@ accepts its own UI format that way.
 
 Params are representative defaults (each app's default size and length, seed 42).
 For the exact graph behind one of your renders, use **Download workflow** or
-**Open in ComfyUI** on the take in OpenField's viewer.
+**Open in ComfyUI** on the take in Morpheus's viewer.
 
 | File | Used by | Models | Custom nodes | Inputs |
 | --- | --- | --- | --- | --- |
@@ -76,6 +76,9 @@ For the exact graph behind one of your renders, use **Download workflow** or
 | [`transition-stills.json`](transition-stills.json) | Transitions (still to still) | `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors`<br>`gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors`<br>`ltx-2.5-video-vae-bf16.safetensors`<br>`ltx-2.5-audio-vae-bf16.safetensors` | none (core only) | `input_start.png`<br>`input_end.png` |
 | [`speak.json`](speak.json) | Speak (audio to video) | `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors`<br>`gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors`<br>`ltx-2.5-video-vae-bf16.safetensors`<br>`ltx-2.5-audio-vae-bf16.safetensors`<br>`ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors` | none (core only) | `input_start.png`<br>`input_audio.wav` |
 | [`add-sound.json`](add-sound.json) | Add sound (video to audio) | `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors`<br>`gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors`<br>`ltx-2.5-video-vae-bf16.safetensors`<br>`ltx-2.5-audio-vae-bf16.safetensors` | [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite)<br>[ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo) | `input_video.mp4` |
+| [`music-turbo.json`](music-turbo.json) | Audio > Music (ACE-Step 1.5 Turbo, 8 steps) | `acestep_v1.5_xl_turbo_bf16.safetensors`<br>`ace_1.5_vae.safetensors` | none (core only) | none |
+| [`music-base.json`](music-base.json) | Audio > Music (ACE-Step 1.5 Base, 30 steps) | `acestep_v1.5_xl_base_bf16.safetensors`<br>`ace_1.5_vae.safetensors` | none (core only) | none |
+| [`speech-qwen3.json`](speech-qwen3.json) | Audio > Speech (Qwen3-TTS 1.7B VoiceDesign) | none | none (core only) | none |
 | [`upscale-sharpen.json`](upscale-sharpen.json) | Upscale > Sharpen | `RealESRGAN_x4plus.pth` | [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite) | `input_video.mp4` |
 | [`upscale-sharpen-still.json`](upscale-sharpen-still.json) | Upscale > Sharpen (still) | `RealESRGAN_x4plus.pth` | none (core only) | `input_still.png` |
 | [`upscale-redraw.json`](upscale-redraw.json) | Upscale > Redraw | `seedvr2_ema_3b_fp16.safetensors`<br>`ema_vae_fp16.safetensors` | [ComfyUI-VideoHelperSuite](https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite)<br>[ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) | `input_video.mp4` |
@@ -92,6 +95,6 @@ For the exact graph behind one of your renders, use **Download workflow** or
 | [`stage-look-depth.json`](stage-look-depth.json) | Stage look frame (Z-Image Turbo + Fun ControlNet Union on the depth pass) | `qwen_3_4b.safetensors`<br>`z_image_turbo_bf16.safetensors`<br>`ae.safetensors`<br>`Z-Image-Turbo-Fun-Controlnet-Union.safetensors` | none (core only) | `input_depth.png` |
 | [`stage-look-edit.json`](stage-look-edit.json) | Stage look frame (Qwen-Image-Edit on the clay frame) | `qwen_image_edit_2509_fp8_e4m3fn.safetensors`<br>`qwen_2.5_vl_7b_fp8_scaled.safetensors`<br>`qwen_image_vae.safetensors`<br>`Qwen-Image-Edit-2509-Lightning-8steps-V1.0-bf16.safetensors` | none (core only) | `input_clay_frame.png` |
 | [`stage-shot.json`](stage-shot.json) | Stage (LTX-2.5 Layout to Render, two-stage distilled, clay 1280x704) | `ltx-2.5-video-vae-bf16.safetensors`<br>`ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors`<br>`ltx-2.5-22b-ic-lora-layout-to-render-1.0.safetensors`<br>`ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors`<br>`gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors` | [ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo) | `input_clay.mp4`<br>`input_look.png` |
-| [`video-h3-i2v.json`](video-h3-i2v.json) | Video (MiniMax H3, opt-in) | `minimax_h3_fl2va_pruned_fp8_scaled.safetensors`<br>`qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`<br>`minimax_h3_video_vae_fp16.safetensors`<br>`minimax_h3_audio_vae_fp32.safetensors` | none (core only) | `input_start.png` |
-| [`video-h3-refs.json`](video-h3-refs.json) | Video (MiniMax H3 references, opt-in) | `minimax_h3_ref2va_pruned_fp8_scaled.safetensors`<br>`qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`<br>`minimax_h3_video_vae_fp16.safetensors`<br>`minimax_h3_audio_vae_fp32.safetensors` | none (core only) | `input_ref_1.png`<br>`input_ref_2.png` |
+| [`video-h3-i2v.json`](video-h3-i2v.json) | Video (MiniMax H3, opt-in) | `Minimax-h3_Singularity_ref2va_v2_int8.safetensors`<br>`qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`<br>`minimax_h3_video_vae_fp16.safetensors`<br>`minimax_h3_audio_vae_fp32.safetensors` | none (core only) | `input_start.png` |
+| [`video-h3-refs.json`](video-h3-refs.json) | Video (MiniMax H3 references, opt-in) | `Minimax-h3_Singularity_ref2va_v2_int8.safetensors`<br>`qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`<br>`minimax_h3_video_vae_fp16.safetensors`<br>`minimax_h3_audio_vae_fp32.safetensors` | none (core only) | `input_ref_1.png`<br>`input_ref_2.png` |
 | [`video-ltx23-i2v.json`](video-ltx23-i2v.json) | Video (LTX-2.3 legacy) | `ltx-2.3-22b-dev-fp8.safetensors`<br>`ltx_2.3_22b_distilled_1.1_lora_dynamic_fro09_avg_rank_111_bf16.safetensors`<br>`gemma_3_12B_it_fp4_mixed.safetensors`<br>`ltx-2.3-spatial-upscaler-x2-1.1.safetensors` | none (core only) | `input_start.png` |

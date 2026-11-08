@@ -134,7 +134,7 @@ export function buildRestyleGraph(p: RestyleParams): Graph {
   const g = buildMirrorGraph({
     prompt: p.prompt, negative: p.negative, sourceVideo: p.sourceVideo, firstFrame: 'frame.png',
     width: W, height: H, seconds: p.seconds, seed: p.seed, control: p.control,
-    guideStrength: p.guideStrength, withAudio: p.withAudio, filenamePrefix: 'openfield/restyle',
+    guideStrength: p.guideStrength, withAudio: p.withAudio, filenamePrefix: 'morpheus/restyle',
   }) as Graph;
   const size = editSize(W, H, 1);
   const edited = editFrame(g, ['src', 0], {
@@ -263,7 +263,7 @@ export function buildSwapGraph(p: SwapParams): Graph {
       inputs: { image_a: ['decode', 0], image_b: ['fit', 0], mask: ['mask', 0], trim_to_shortest: true, mask_low_res_dilation: 5 },
     },
     video: { class_type: 'CreateVideo', inputs: { images: ['blend', 0], fps: FPS } },
-    save: { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: 'openfield/swap', format: 'auto', codec: 'auto' } },
+    save: { class_type: 'SaveVideo', inputs: { video: ['video', 0], filename_prefix: 'morpheus/swap', format: 'auto', codec: 'auto' } },
   });
   return g;
 }

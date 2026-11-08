@@ -4,7 +4,7 @@
  * subscribe with useStore(selector).
  */
 import { useSyncExternalStore } from 'react';
-import { api, connectLive, type PhoneEvent, type Status, type Take } from './api';
+import { api, connectLive, type PairEvent, type PhoneEvent, type Status, type Take } from './api';
 
 export interface Live {
   takes: Take[];
@@ -15,9 +15,16 @@ export interface Live {
   /** The newest live preview frame and the render it belongs to. */
   preview: { url: string; promptId: string | null } | null;
   toast: { text: string; err?: boolean } | null;
+  /** App ids pinned to the header as quick links, in the order they were added. */
+  favorites: string[];
 }
 
-let state: Live = { takes: [], status: null, progress: {}, started: {}, preview: null, toast: null };
+const FAV_KEY = 'morpheus.favorites';
+function loadFavorites(): string[] {
+  try { return JSON.parse(localStorage.getItem(FAV_KEY) ?? '[]'); } catch { return []; }
+}
+
+let state: Live = { takes: [], status: null, progress: {}, started: {}, preview: null, toast: null, favorites: loadFavorites() };
 const listeners = new Set<() => void>();
 function set(patch: Partial<Live>) {
   state = { ...state, ...patch };
@@ -38,6 +45,14 @@ export function toast(text: string, err = false) {
   set({ toast: { text, err } });
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => set({ toast: null }), err ? 7000 : 3500);
+}
+
+/** Pin/unpin an app to the header quick links. Survives reloads via localStorage. */
+export function toggleFavorite(id: string) {
+  const has = state.favorites.includes(id);
+  const favorites = has ? state.favorites.filter((x) => x !== id) : [...state.favorites, id];
+  try { localStorage.setItem(FAV_KEY, JSON.stringify(favorites)); } catch { /* private mode */ }
+  set({ favorites });
 }
 
 export async function refreshTakes() {
@@ -64,6 +79,9 @@ function upsert(t: Take) {
   set({ takes, progress });
 }
 
+/** Fold a fetched take into the feed (the Agent's chat cards use this to resolve a take the live socket may have missed). */
+export const upsertTake = upsert;
+
 let started = false;
 export function startLive() {
   if (started) return;
@@ -83,6 +101,7 @@ export function startLive() {
     },
     onQueue: () => void refreshStatus(),
     onPhone: (e) => phoneListeners.forEach((l) => l(e)),
+    onPhoneApp: (e) => pairListeners.forEach((l) => l(e)),
   });
 }
 
@@ -91,6 +110,13 @@ const phoneListeners = new Set<(e: PhoneEvent) => void>();
 export function onPhoneEvent(l: (e: PhoneEvent) => void): () => void {
   phoneListeners.add(l);
   return () => { phoneListeners.delete(l); };
+}
+
+/** Pairing events (Setup > Phone) follow the same one-shot pattern. */
+const pairListeners = new Set<(e: PairEvent) => void>();
+export function onPairEvent(l: (e: PairEvent) => void): () => void {
+  pairListeners.add(l);
+  return () => { pairListeners.delete(l); };
 }
 
 /** Settings JSON of a take, parsed once. */
@@ -107,6 +133,8 @@ export function settingsOf(t: Take): any {
 export const isImage = (t: Take) => t.kind === 'still';
 /** An Object take: a GLB, with a turntable mp4 standing in for it wherever media plays. */
 export const isModel = (t: Take) => t.kind === 'object';
+/** An Audio take (Music or Speech): an mp3, no frames anywhere. */
+export const isAudio = (t: Take) => t.kind === 'audio';
 export const isActive = (t: Take) => t.status === 'queued' || t.status === 'rendering';
 
 /**

@@ -2,7 +2,7 @@
   "u": {
     "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "minimax_h3_fl2va_pruned_fp8_scaled.safetensors",
+      "unet_name": "Minimax-h3_Singularity_ref2va_v2_int8.safetensors",
       "weight_dtype": "default"
     }
   },
@@ -29,7 +29,7 @@
   "sampler": {
     "class_type": "KSamplerSelect",
     "inputs": {
-      "sampler_name": "res_multistep"
+      "sampler_name": "euler"
     }
   },
   "sched": {
@@ -118,7 +118,7 @@
         "vid",
         0
       ],
-      "filename_prefix": "video/OpenField",
+      "filename_prefix": "video/Morpheus",
       "format": "auto",
       "codec": "auto"
     }

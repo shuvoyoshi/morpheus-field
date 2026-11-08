@@ -29,12 +29,12 @@ const fail = (label: string, detail = '') => {
   console.log(`${c.bad('FAIL')} ${label} ${detail}`);
 };
 
-console.log(`\n${c.bold('OpenField doctor')}\n`);
+console.log(`\n${c.bold('Morpheus doctor')}\n`);
 
 // --- node ---
 const major = Number(process.versions.node.split('.')[0]);
 if (major >= 22) pass('Node', `v${process.versions.node}`);
-else fail('Node', `v${process.versions.node} — OpenField needs Node 22 or newer (the Comfy SDK requires it).`);
+else fail('Node', `v${process.versions.node} — Morpheus needs Node 22 or newer (the Comfy SDK requires it).`);
 
 // --- engine ---
 const status = await getStatus();
@@ -42,8 +42,8 @@ if (status.up) {
   const vram = status.vramTotalGb ? `${status.vramTotalGb.toFixed(0)} GB VRAM` : 'VRAM unknown';
   pass('ComfyUI', `${config.comfyUrl} · v${status.version ?? '?'} · ${vram}`);
   const [maj = 0, min = 0] = (status.version ?? '').replace(/^v/, '').split('.').map(Number);
-  if (!status.version) warn('ComfyUI version', 'not reported by /system_stats. OpenField needs 0.38 or newer.');
-  else if (maj === 0 && min < 38) fail('ComfyUI version', `v${status.version}. OpenField needs 0.38 or newer (update ComfyUI).`);
+  if (!status.version) warn('ComfyUI version', 'not reported by /system_stats. Morpheus needs 0.38 or newer.');
+  else if (maj === 0 && min < 38) fail('ComfyUI version', `v${status.version}. Morpheus needs 0.38 or newer (update ComfyUI).`);
   if (status.vramTotalGb && status.vramTotalGb < 23) {
     warn('VRAM', `${status.vramTotalGb.toFixed(0)} GB. The video engines here were built on 32 GB; expect offloading, or worse, out-of-memory at HERO sizes.`);
   }
@@ -67,7 +67,7 @@ if (!isLocal()) {
   stopProxy();
 } else {
   fail('Comfy API v2', `nothing at ${config.comfyBaseUrl}`);
-  console.log(c.dim('       pip install comfy-api-proxy  (OpenField starts it for you), or set COMFY_PROXY_BIN.'));
+  console.log(c.dim('       pip install comfy-api-proxy  (Morpheus starts it for you), or set COMFY_PROXY_BIN.'));
 }
 
 // --- weights ---
@@ -78,7 +78,7 @@ if (status.up) {
   if (ready.length) pass('Models', `ready: ${ready.map((b) => b.id).join(', ')}`);
   for (const b of core.filter((x) => !x.ready)) {
     fail(`Models · ${b.id}`, `${b.missingFiles.length} file(s) missing`);
-    for (const f of b.missingFiles) console.log(c.dim(`       models/${f.dir}/${f.file}${f.override ? `  (set by ${f.override} in .env; not downloaded)` : ''}`));
+    for (const f of b.missingFiles) console.log(c.dim(`       models/${f.dir}/${f.file}${f.override ? `  (set by ${f.override} in .env; not downloaded)` : f.manual ? '  (manual; not downloaded)' : ''}`));
   }
   const optMissing = bundles.filter((b) => b.optional && !b.ready);
   if (optMissing.length) {

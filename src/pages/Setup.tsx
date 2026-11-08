@@ -1,8 +1,9 @@
 /** Setup: which model bundles are on disk, and how to get the rest. */
 import { useEffect, useState } from 'react';
 import { api, type BundleStatus } from '../api';
+import { PhonePair } from '../Phone';
 import { useStore } from '../store';
-import { RenderTierPicker, VideoDecodePicker } from '../ui';
+import { AgentModelSetup, EngineControl, RenderTierPicker, VideoDecodePicker } from '../ui';
 
 export default function Setup() {
   const [bundles, setBundles] = useState<BundleStatus[] | null>(null);
@@ -17,7 +18,7 @@ export default function Setup() {
     <div className="page-scroll">
       <div className="page-pad" style={{ maxWidth: 980 }}>
         <h1 className="display" style={{ fontSize: 44, margin: 0 }}>Setup</h1>
-        <p className="dim">OpenField runs your local ComfyUI through the Comfy SDK. Weights live in ComfyUI. Anything marked missing is switched off until its files exist.</p>
+        <p className="dim">Morpheus runs your local ComfyUI through the Comfy SDK. Weights live in ComfyUI. Anything marked missing is switched off until its files exist.</p>
         <div className="tile" style={{ margin: '18px 0' }}>
           <dl className="kv" style={{ width: '100%' }}>
             <dt>Engine</dt><dd>{st?.target === 'cloud' ? 'Comfy Cloud' : `Local ComfyUI ${st?.version ? `v${st.version}` : ''}`}</dd>
@@ -28,6 +29,21 @@ export default function Setup() {
             <dt>Get models</dt><dd className="mono">npm run models</dd>
             <dt>Check install</dt><dd className="mono">npm run doctor</dd>
           </dl>
+        </div>
+        <div className="tile" style={{ margin: '0 0 18px', padding: 16 }}>
+          <div className="label" style={{ marginBottom: 6 }}>Agent model</div>
+          <div className="dim" style={{ fontSize: 12.5, marginBottom: 14 }}>Point the in-app Agent at a local model. Saved here it applies immediately and overrides .env.</div>
+          <AgentModelSetup />
+        </div>
+        <div className="tile" style={{ margin: '0 0 18px', padding: 16 }}>
+          <div className="label" style={{ marginBottom: 6 }}>Engine</div>
+          <div className="dim" style={{ fontSize: 12.5, marginBottom: 14 }}>LAN or WAN, which card, and the on/off switch. Saved here it applies at the next start.</div>
+          <EngineControl />
+        </div>
+        <div className="tile" style={{ margin: '0 0 18px', padding: 16 }}>
+          <div className="label" style={{ marginBottom: 6 }}>Phone</div>
+          <div className="dim" style={{ fontSize: 12.5, marginBottom: 14 }}>Open the whole app in your phone's browser, paired to this desktop. Same Wi-Fi; the main server never leaves loopback.</div>
+          <PhonePair />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0 12px' }}>
           <div className="label">Model bundles</div>
@@ -43,7 +59,6 @@ export default function Setup() {
               </div>
               <div className="dim" style={{ fontSize: 12.5 }}>{b.purpose}</div>
               <div className="label" style={{ textTransform: 'none', letterSpacing: 0 }}>{b.license}</div>
-              {b.licenseWarning && <div style={{ color: 'var(--accent)', fontSize: 12.5 }}>{b.licenseWarning}</div>}
               {!b.ready && (
                 <div className="compiled">
                   {b.missingFiles.map((f) => <div key={f.file}>models/{f.dir}/{f.file}  ← {f.override ? `set by ${f.override} in .env (not downloaded)` : `${f.repo}${f.gated ? ' (gated: accept the license on Hugging Face first)' : ''}`}</div>)}

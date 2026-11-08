@@ -1,10 +1,10 @@
 # Judge preview on Runpod
 
-A password-gated, live OpenField for the contest judges, on a rented Runpod GPU
+A password-gated, live Morpheus for the contest judges, on a rented Runpod GPU
 that runs only while judging is open. Your own machine is never exposed: the
 pod has its own ComfyUI, its own models and its own job history.
 
-What judges get: the full OpenField UI behind a sign-in page, with draft limits
+What judges get: the full Morpheus UI behind a sign-in page, with draft limits
 (5 seconds, 720p, one take per render, a few variants at most), a daily render
 cap shared by everyone (20 by default), and a slim "Judge preview" strip that
 says so. Setup is read-only; phone capture, project folders, HDR, Upscale
@@ -14,9 +14,9 @@ The pieces live in [`deploy/runpod/`](../deploy/runpod/):
 
 | File | What it is |
 | --- | --- |
-| `Dockerfile` | CUDA 12.8 on Ubuntu 24.04, Node 22, ffmpeg, ComfyUI v0.38.2, pinned node packs, comfy-api-proxy 0.1.6, OpenField built |
+| `Dockerfile` | CUDA 12.8 on Ubuntu 24.04, Node 22, ffmpeg, ComfyUI v0.38.2, pinned node packs, comfy-api-proxy 0.1.6, Morpheus built |
 | `nodes.txt` | The custom node packs baked in, each pinned by commit |
-| `start.sh` | First boot: models to the volume. Every boot: ComfyUI, then OpenField in judge mode on port 3161 |
+| `start.sh` | First boot: models to the volume. Every boot: ComfyUI, then Morpheus in judge mode on port 3161 |
 | `template.json` | A Runpod template (REST `POST /v1/templates` body) with the image name left as `REPLACE_ME` |
 
 ---
@@ -91,13 +91,13 @@ HTTP port `3161`, and these environment variables:
 Deploy a pod: pick the template, attach the network volume, and choose a GPU
 with **24 GB or more**:
 
-- **RTX 5090 (32 GB)**: what OpenField was built and measured on. Best match.
+- **RTX 5090 (32 GB)**: what Morpheus was built and measured on. Best match.
 - **L40S (48 GB)**: the most headroom, a little slower than a 5090.
 - **RTX 4090 (24 GB)**: works at 720p, with some offloading on the heavier apps.
 
 The first boot downloads about 92 GB to `/workspace/models` (resumable: if the
 pod stops, the next boot carries on). Watch the pod's logs. When you see
-`OpenField on http://0.0.0.0:3161`, open:
+`Morpheus on http://0.0.0.0:3161`, open:
 
 ```
 https://<pod id>-3161.proxy.runpod.net
@@ -108,7 +108,7 @@ short video, and check that both play. Then **stop** the pod. The volume keeps
 the models, so later boots take a few minutes.
 
 If something fails: `/workspace/logs/comfyui.log` has ComfyUI's log, and the
-pod log shows the doctor's report and OpenField's own output.
+pod log shows the doctor's report and Morpheus's own output.
 
 ## 6. During judging
 

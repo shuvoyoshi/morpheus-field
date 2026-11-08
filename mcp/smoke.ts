@@ -1,6 +1,6 @@
 /**
  * Smoke test: spawn the MCP server over stdio with the SDK client and call the
- * READ-ONLY tools against a running OpenField (status, list_presets,
+ * READ-ONLY tools against a running Morpheus (status, list_presets,
  * list_recipes, list_takes, get_take). Never queues a render.
  *
  *   npx tsx mcp/smoke.ts             (or: npm run mcp:smoke)
@@ -25,8 +25,11 @@ const client = new Client({ name: 'openfield-smoke', version: '0.1.0' });
 await client.connect(transport);
 
 const EXPECTED = [
-  'status', 'list_presets', 'list_recipes', 'generate_video', 'make_loop', 'generate_image', 'direct_shot', 'direct_scene',
-  'edit_image', 'mirror_motion', 'apply_effect', 'reshoot', 'extend_video', 'make_transition', 'speak', 'add_sound', 'upscale', 'make_3d', 'list_takes', 'get_take', 'wait_for_take', 'cancel', 'list_cast', 'create_cast',
+  'status', 'list_presets', 'list_recipes', 'generate_video', 'make_loop', 'generate_image', 'list_loras',
+  'direct_shot', 'direct_scene', 'edit_image', 'mirror_motion', 'remove_background', 'restyle_video', 'swap_object',
+  'apply_effect', 'reshoot', 'extend_video', 'make_transition', 'speak', 'add_sound', 'generate_music', 'generate_speech',
+  'upscale', 'make_3d', 'list_takes', 'get_take', 'wait_for_take', 'critique_take',
+  'list_cast', 'create_cast', 'fix_seam', 'finish_hdr', 'stage_render', 'cancel',
 ];
 const { tools } = await client.listTools();
 const names = tools.map((t) => t.name);

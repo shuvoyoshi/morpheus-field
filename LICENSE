@@ -22,9 +22,9 @@ SOFTWARE.
 
 ---
 
-This license covers OpenField's own source code only.
+This license covers Morpheus's own source code only.
 
-OpenField does not include, redistribute or sublicense any model weights. The
+Morpheus does not include, redistribute or sublicense any model weights. The
 models it drives are downloaded from their publishers and carry their own
 terms, some of which restrict commercial use or exclude particular countries.
 See docs/MODELS.md for the license attached to each one.

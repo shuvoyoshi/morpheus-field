@@ -1,21 +1,21 @@
-# OpenField over MCP
+# Morpheus over MCP
 
-OpenField ships an [MCP](https://modelcontextprotocol.io) server, so any agent
+Morpheus ships an [MCP](https://modelcontextprotocol.io) server, so any agent
 that speaks MCP (Claude Code, Claude Desktop, others) can drive every app:
 Video, Seamless Loop, Image, Director, Mirror, Reshoot and Upscale. It runs on
-your machine and talks only to your own OpenField server. OpenField itself
+your machine and talks only to your own Morpheus server. Morpheus itself
 runs on local ComfyUI; Comfy Cloud as its engine is experimental, and Object
 (`make_3d`) and Finish in HDR (`finish_hdr`) need the local engine. Video tools
 render at the machine's render size, 720p by default on 24 GB or more.
 
-The server is a thin stdio client of the OpenField HTTP API on `:3161`. It
+The server is a thin stdio client of the Morpheus HTTP API on `:3161`. It
 builds the same request bodies the pages send (see
 [`mcp/bodies.ts`](../mcp/bodies.ts)), so a take queued by an agent is the same
 take you would get from the UI, and it shows up live in the UI's history.
 
 ## Setup
 
-OpenField itself must be running (`npm run dev`, or `npm start`), with ComfyUI
+Morpheus itself must be running (`npm run dev`, or `npm start`), with ComfyUI
 up. Check with `curl -s http://127.0.0.1:3161/api/status`.
 
 ### Claude Code
@@ -42,7 +42,7 @@ Edit `claude_desktop_config.json` (Settings, Developer, Edit Config). Use
 absolute paths: Desktop does not start from your shell, so `npx` may not be on
 its PATH.
 
-Linux, or native Windows with OpenField on the same machine:
+Linux, or native Windows with Morpheus on the same machine:
 
 ```json
 {
@@ -56,7 +56,7 @@ Linux, or native Windows with OpenField on the same machine:
 }
 ```
 
-Windows, with OpenField running inside WSL:
+Windows, with Morpheus running inside WSL:
 
 ```json
 {
@@ -76,7 +76,7 @@ Desktop after editing.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENFIELD_URL` | `http://127.0.0.1:3161` | The OpenField server the MCP talks to |
+| `OPENFIELD_URL` | `http://127.0.0.1:3161` | The Morpheus server the MCP talks to |
 | `FFMPEG_BIN` | `ffmpeg` | Shrinks still previews before returning them |
 | `FFPROBE_BIN` | next to `FFMPEG_BIN` | Reads clip length and size for Mirror and Reshoot |
 
@@ -85,7 +85,7 @@ Without ffprobe, clips are treated the way the UI treats unreadable metadata:
 
 ## Tools
 
-The server registers 31 tools.
+The server registers 33 tools.
 
 | Tool | App | What it does |
 | --- | --- | --- |
@@ -110,6 +110,8 @@ The server registers 31 tools.
 | `make_transition` | Transitions | Bridge two clips or stills with a style (`morph`, `whip`, `match`, `light-leak`, ...); returns from + bridge + to |
 | `speak` | Speak | Face still + sound file: the picture follows the audio (LTX-2.5 audio to video) |
 | `add_sound` | Add sound | Generate a soundtrack for a clip; the frames stay as they are (LTX-2.5 video to audio) |
+| `generate_music` | Audio (Music) | Tags and lyrics become a full song with key, tempo, time signature, language and length (5 s to 5 min); `model` turbo (8 steps) or base (30 steps) (ACE-Step 1.5 XL) |
+| `generate_speech` | Audio (Speech) | Says your words in a voice you describe in plain words (Qwen3-TTS 1.7B VoiceDesign) |
 | `upscale` | Upscale | A take or file, video or still. `mode` sharpen (2x, `model` esrgan or ultrasharp, `rife`), redraw (SeedVR2, `model` 3b or 7b, `height` 1080 or 1440, `color`) or dream (LTX-2.5, `creativity`, `prompt`) |
 | `list_cast` | Cast | The cast: each member's `@mention`, kind, description and picture paths |
 | `create_cast` | Cast | Save a character, prop or place from 1 to 6 pictures (paths or `take:<id>`) plus a description; an existing name gets the pictures added |
@@ -190,7 +192,7 @@ npm run mcp:smoke    # spawn the server with the SDK client, call the read-only 
 `mcp:check` extracts the request-body code from `src/pages/*.tsx`, evaluates it
 with the same inputs, and compares the result to what `mcp/bodies.ts` builds. If
 you change how a page builds its body, it fails until the MCP builder matches.
-`mcp:smoke` needs OpenField running and never queues a render.
+`mcp:smoke` needs Morpheus running and never queues a render.
 
 When you add an app, add its body builder to `mcp/bodies.ts`, a case to
 `mcp/bodies.check.ts`, and a tool to `mcp/server.ts`.

@@ -1,6 +1,6 @@
-# OpenField, for the agent doing the install
+# Morpheus, for the agent doing the install
 
-You are being asked to set up OpenField on this machine. Work through the
+You are being asked to set up Morpheus on this machine. Work through the
 checklist below. Read [`docs/INSTALL.md`](docs/INSTALL.md) for the detail behind
 each step, and [`docs/MODELS.md`](docs/MODELS.md) for the model tables.
 
@@ -15,11 +15,11 @@ than downloading silently past them.
 1. **Check the prerequisites.** `node -v` must be 22 or newer. Confirm an NVIDIA
    GPU and how much VRAM it has (`nvidia-smi`). Below 24 GB, tell the user video
    generation will offload and be slow, that under about 16 GB they should
-   plan on stills only, and that OpenField will default video to 480p (24 GB
+   plan on stills only, and that Morpheus will default video to 480p (24 GB
    and up defaults to 720p; Setup > Render size or `OPENFIELD_RENDER_TIER`
    changes it). Confirm there is enough free disk for what they choose.
 
-2. **Find or install ComfyUI.** OpenField does not include it. If
+2. **Find or install ComfyUI.** Morpheus does not include it. If
    `curl -s http://127.0.0.1:8188/system_stats` answers, it is already running,
    and the reported `comfyui_version` must be 0.38 or newer. If it is not
    installed, follow step 1 of `docs/INSTALL.md`, matching the PyTorch CUDA index
@@ -36,8 +36,8 @@ than downloading silently past them.
    Check that `ffmpeg` and `ffprobe` are on PATH (or set `FFMPEG_BIN` /
    `FFPROBE_BIN`); Stage, Remove background, HDR, the seam meter and Upscale
    need them.
-   OpenField runs every job through the Comfy SDK, which needs Comfy API v2.
-   comfy-api-proxy serves it locally on :8189 and the OpenField server starts
+   Morpheus runs every job through the Comfy SDK, which needs Comfy API v2.
+   comfy-api-proxy serves it locally on :8189 and the Morpheus server starts
    it automatically if it is on PATH (or `COMFY_PROXY_BIN` names it). Make sure
    ComfyUI is started with `--preview-method auto` for live previews.
    Then edit `.env`: `COMFY_URL` if ComfyUI is not on the default port,
@@ -56,11 +56,12 @@ than downloading silently past them.
 
    - `ltx25` (40 GB) and `qwen` (32 GB) are the core install. Both permit
      commercial use. This is the right default.
-   - `h3` (42 GB) adds the MiniMax H3 engine. **Its license excludes the United
-     States, the EU, the UK and South Korea.** Ask explicitly rather than
-     assuming; if the user is in one of those, say so plainly and let them decide.
-   - `h3-refs` (21 GB) adds reference-image mode, `h3-turbo` (8 GB) adds step
-     distills. Both need `h3`.
+    - `h3` (21.5 GB) adds the MiniMax H3 engine, all of its modes (text, image,
+      reference, first+last) on the all-in-one Singularity checkpoint, which you
+      add by hand (it is not downloaded). **Its license excludes the United
+      States, the EU, the UK and South Korea.** Ask explicitly rather than
+      assuming; if the user is in one of those, say so plainly and let them decide.
+    - `h3-turbo` (2 GB) adds the 8-step turbo distill. Needs `h3`.
    - `flux2` (51 GB) adds FLUX.2 stills. **Non-commercial license.**
    - `upres` (Upscale Sharpen, RealESRGAN, commercially clean) also needs two
      custom node packs cloned into `ComfyUI/custom_nodes/`, per
@@ -112,7 +113,7 @@ than downloading silently past them.
 
 ## Things that will trip you up
 
-- **OpenField resolves models by exact filename.** A file with the right content
+- **Morpheus resolves models by exact filename.** A file with the right content
   and a slightly different name is a missing file. The names in
   `server/models.ts` are what the graph builders ask ComfyUI for, except for the
   four LTX-2.5 files when `OPENFIELD_LTX25_*` is set in `.env`
