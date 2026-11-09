@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { downloadUrl, inputUrl, mediaUrl, posterUrl, uploadFile, type Take } from '../api';
 import { setParams, useRoute } from '../router';
 import { inFeed, isAudio, isImage, isModel, settingsOf, toast, useStore } from '../store';
-import { ChipMenu, Icon, MediaCard, Spill, Switch, fmtSeconds, useEstimate } from '../ui';
+import { ChipMenu, Icon, MediaCard, Spill, Switch, fmtSeconds, useEstimate, RailHandle, useRail } from '../ui';
 import { recreate, remove } from '../Viewer';
 import { DropWell } from './Mirror';
 import { useDropZone, usePageDrop } from '../drop';
@@ -157,8 +157,11 @@ export default function UpscalePage() {
   const compareTake = takes.find((t) => t.id === compare);
   const modeDef = UPSCALE_MODES.find((m) => m.id === mode)!;
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '360px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         {source && <Spill src={source.take ? posterUrl(source.take) : source.url} video={!source.take && video} key={source.url} />}
         <div className="display" style={{ fontSize: 26 }}>Upscale</div>
@@ -244,7 +247,6 @@ export default function UpscalePage() {
           </div>
         )}
         {blocked && <div className="dim" style={{ fontSize: 12.5, color: 'var(--accent-hi)' }}>{blocked}</div>}
-        {mode === 'sharpen' && sharpModel === 'ultrasharp' && <div className="label" style={{ textTransform: 'none', letterSpacing: 0 }}>{SHARPEN_MODELS[1].warn}</div>}
 
         <button type="button" className="generate" style={{ marginTop: 'auto' }} disabled={!!busy || !source || !!blocked} onClick={() => void go()}>
           <span>{busy ?? modeDef.label}</span>

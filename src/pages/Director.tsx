@@ -15,7 +15,7 @@ import {
 } from '../catalog';
 import { setParams, useRoute } from '../router';
 import { isActive, isImage, settingsOf, toast, useStore, inFeed } from '../store';
-import { ChipMenu, Icon, MediaCard, useClickAway, Stepper, Switch, fmtSeconds, useEstimate, Spill, presetClip, TierChip, useTierChoice } from '../ui';
+import { ChipMenu, Icon, MediaCard, useClickAway, Stepper, Switch, fmtSeconds, useEstimate, Spill, presetClip, TierChip, useTierChoice, RailHandle, useRail } from '../ui';
 import Viewer, { recreate, remove } from '../Viewer';
 import { MentionBox } from '../Mention';
 import { useCast } from '../castStore';
@@ -212,8 +212,11 @@ export default function DirectorPage() {
   const canGo = mode === 'scene' ? shots.length > 0 && shots.every((s) => s.action.trim()) : !!compiled;
   const sceneEst = est ? est * toShoot.length * (heroFrames ? 1.25 : 1) : null;
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '380px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="display" style={{ fontSize: 26 }}>Director</div>
@@ -314,7 +317,7 @@ export default function DirectorPage() {
           <>
             <div className="chip-row">
               {mode === 'image'
-                ? <ChipMenu icon="sparkle" value={imageModel} onChange={setImageModel} title="Model" options={IMAGE_MODELS.map((m) => ({ value: m.id, label: m.label }))} />
+                ? <ChipMenu icon="sparkle" value={imageModel} onChange={setImageModel} title="Model" options={IMAGE_MODELS.filter((m) => m.id === 'qwen' || m.id === 'flux2').map((m) => ({ value: m.id as 'qwen' | 'flux2', label: m.label }))} />
                 : <ChipMenu icon="clock" value={seconds} onChange={setSeconds} title="Duration" options={[3, 5, 8, 10].map((d) => ({ value: d, label: `${d}s` }))} />}
               <ChipMenu icon="aspect" value={aspect} onChange={setAspect} title="Aspect" options={ASPECTS.map((a) => ({ value: a.id, label: a.id }))} />
               {mode === 'video' && <TierChip app="director" value={res} onChange={setRes} />}

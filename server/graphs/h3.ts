@@ -11,8 +11,7 @@
  *
  * Your own LoRAs (validated by pickLoras) are applied in order, with the turbo
  * distill last at strength 1.0 — the distill and its sigma shift stay a matched
- * pair on top of whatever you stacked. The base MiniMax-H3 license still
- * excludes the US, EU, UK and South Korea; turbo changes speed, not licensing.
+ * pair on top of whatever you stacked.
  */
 
 export interface H3Params {

@@ -29,29 +29,39 @@ export interface ComfyStatus {
 }
 
 export async function getStatus(): Promise<ComfyStatus> {
-  try {
-    const r = await fetch(`${COMFY}/system_stats`, { signal: AbortSignal.timeout(config.probeTimeoutMs) });
-    if (!r.ok) return { up: false };
-    const d = (await r.json()) as any;
-    const dev = d.devices?.[0] ?? {};
-    const q = await fetch(`${COMFY}/prompt`, { signal: AbortSignal.timeout(config.probeTimeoutMs) })
-      .then((x) => x.json() as any)
-      .catch(() => null);
-    return {
-      up: true,
-      version: d.system?.comfyui_version,
-      gpu: typeof dev.name === 'string' ? dev.name.replace(/^cuda:\d+\s*/, '').replace(/\s*:\s*cudaMallocAsync$/, '') : undefined,
-      vramFreeGb: dev.vram_free ? dev.vram_free / 1e9 : undefined,
-      vramTotalGb: dev.vram_total ? dev.vram_total / 1e9 : undefined,
-      queueRemaining: q?.exec_info?.queue_remaining,
-      // Heuristic from the 2026-06-29 Topaz incident: almost-no free VRAM
-      // while our queue is empty means another process owns the GPU.
-      otherGpuProcess:
-        q?.exec_info?.queue_remaining === 0 && dev.vram_free && dev.vram_free < 3e9,
-    };
-  } catch {
-    return { up: false };
+  // /system_stats can stall for seconds while the GPU is busy (a render or a
+  // model load) — that is slow, not down. Probe twice before calling the engine
+  // down, the way apiUp() gives the job list a second chance. A genuinely dead
+  // engine refuses the connection, so both probes fail fast and we still report
+  // down quickly.
+  let d: any = null;
+  for (let attempt = 0; attempt < 2 && !d; attempt++) {
+    let r: Response;
+    try {
+      r = await fetch(`${COMFY}/system_stats`, { signal: AbortSignal.timeout(config.probeTimeoutMs) });
+    } catch {
+      continue; // timeout or a transient blip — take the second probe
+    }
+    if (!r.ok) continue; // transient non-OK — take the second probe
+    d = await r.json().catch(() => null);
   }
+  if (!d) return { up: false };
+  const dev = d.devices?.[0] ?? {};
+  const q = await fetch(`${COMFY}/prompt`, { signal: AbortSignal.timeout(config.probeTimeoutMs) })
+    .then((x) => x.json() as any)
+    .catch(() => null);
+  return {
+    up: true,
+    version: d.system?.comfyui_version,
+    gpu: typeof dev.name === 'string' ? dev.name.replace(/^cuda:\d+\s*/, '').replace(/\s*:\s*cudaMallocAsync$/, '') : undefined,
+    vramFreeGb: dev.vram_free ? dev.vram_free / 1e9 : undefined,
+    vramTotalGb: dev.vram_total ? dev.vram_total / 1e9 : undefined,
+    queueRemaining: q?.exec_info?.queue_remaining,
+    // Heuristic from the 2026-06-29 Topaz incident: almost-no free VRAM
+    // while our queue is empty means another process owns the GPU.
+    otherGpuProcess:
+      q?.exec_info?.queue_remaining === 0 && dev.vram_free && dev.vram_free < 3e9,
+  };
 }
 
 // ------------------------------------------------------------------ engine ----
@@ -99,10 +109,41 @@ export function setEngineSelection(patch: Partial<EngineSelection>): EngineState
   return engineState();
 }
 
-/** Physical CUDA indices on this machine: 0 = RTX 4090, 1 = RTX 5090. */
-function gpuEnv(gpu: EngineGpu): string {
-  // both: 5090 primary, the same order the listen bat uses (CUDA_VISIBLE_DEVICES=1,0).
-  return gpu === '4090' ? '0' : gpu === '5090' ? '1' : '1,0';
+/**
+ * The CUDA index of each card, keyed by a name substring (e.g. { 5090: 0,
+ * 4090: 1 }). Detected from nvidia-smi under CUDA_DEVICE_ORDER=PCI_BUS_ID —
+ * the same order launchEngine pins the engine to — so the detection and the
+ * launch can never disagree. The order is by physical PCI slot, not speed: on
+ * this box the 5090 sits in the lower slot (0000…:01) and the 4090 above it
+ * (0000…:02), so the 5090 is index 0 under both PCI_BUS_ID and the default
+ * FASTEST_FIRST. Null when nvidia-smi is unavailable.
+ */
+function gpuIndices(): Promise<Record<string, number> | null> {
+  return new Promise((resolve) => {
+    import('child_process').then(({ execFile }) => {
+      execFile('nvidia-smi', ['--query-gpu=index,name', '--format=csv,noheader'],
+        { env: { ...process.env, CUDA_DEVICE_ORDER: 'PCI_BUS_ID' } }, (err, stdout) => {
+          if (err) return resolve(null);
+          const map: Record<string, number> = {};
+          for (const line of String(stdout).split(/\r?\n/)) {
+            const m = /^\s*(\d+)\s*,\s*(.+)$/.exec(line);
+            if (!m) continue;
+            for (const card of ['4090', '5090']) if (m[2].includes(card)) map[card] = Number(m[1]);
+          }
+          resolve(Object.keys(map).length ? map : null);
+        });
+    });
+  });
+}
+
+/** CUDA_VISIBLE_DEVICES for a card choice, using the detected indices. */
+function gpuEnv(gpu: EngineGpu, indices: Record<string, number> | null): string {
+  // 5090 is the primary card; the fallback order matches this machine.
+  const i5090 = indices?.['5090'] ?? 0;
+  const i4090 = indices?.['4090'] ?? 1;
+  if (gpu === '4090') return String(i4090);
+  if (gpu === '5090') return String(i5090);
+  return `${i5090},${i4090}`; // both: 5090 primary (listed first)
 }
 
 /**
@@ -121,9 +162,14 @@ export async function launchEngine(timeoutMs = config.comfyLaunchTimeout): Promi
   const isWan = sel.mode === 'wan';
   const command = isWan ? config.comfyLaunchWan || config.comfyLaunch : config.comfyLaunch;
   if (!command) return false;
+  const indices = isWan ? null : await gpuIndices();
+  // Pin the device order to the physical PCI slot so CUDA and nvidia-smi always
+  // report the same indices; the default FASTEST_FIRST can disagree if the
+  // relative speed of the cards ever changes.
+  const baseEnv: NodeJS.ProcessEnv = { ...process.env, CUDA_DEVICE_ORDER: 'PCI_BUS_ID' };
   const env: NodeJS.ProcessEnv = isWan
-    ? { ...process.env }
-    : { ...process.env, CUDA_VISIBLE_DEVICES: gpuEnv(sel.gpu) };
+    ? baseEnv
+    : { ...baseEnv, CUDA_VISIBLE_DEVICES: gpuEnv(sel.gpu, indices) };
   const { spawn } = await import('child_process');
   // cmd.exe refuses to run with a UNC working directory, which is what a WSL
   // path looks like to it — so hand the child a drive-backed cwd when we have one.

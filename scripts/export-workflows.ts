@@ -245,6 +245,30 @@ export const ENTRIES: Entry[] = [
     file: 'image-flux2-draft', app: 'Image (draft)',
     build: () => buildStillsGraph({ model: 'flux2', quality: 'draft', prompt: STILL, width: 1328, height: 752, seed: SEED }),
   },
+  {
+    file: 'image-qwen21', app: 'Image (Qwen-Image 2.1)',
+    build: () => buildStillsGraph({ model: 'qwen21', quality: 'quality', prompt: STILL, width: 1328, height: 752, seed: SEED }),
+  },
+  {
+    file: 'image-qwen21-draft', app: 'Image (Qwen-Image 2.1, draft)',
+    build: () => buildStillsGraph({ model: 'qwen21', quality: 'draft', prompt: STILL, width: 1328, height: 752, seed: SEED }),
+  },
+  {
+    file: 'image-krea2', app: 'Image (Krea-2 Turbo)',
+    build: () => buildStillsGraph({ model: 'krea2', quality: 'quality', prompt: STILL, width: 1328, height: 752, seed: SEED }),
+  },
+  {
+    file: 'image-zimage', app: 'Image (Z-Image Turbo)',
+    build: () => buildStillsGraph({ model: 'zimage', quality: 'quality', prompt: STILL, width: 1328, height: 752, seed: SEED }),
+  },
+  {
+    file: 'image-klein', app: 'Image (FLUX.2 Klein)',
+    build: () => buildStillsGraph({ model: 'klein', quality: 'quality', prompt: STILL, width: 1328, height: 752, seed: SEED }),
+  },
+  {
+    file: 'image-flux3', app: 'Image (FLUX.3)',
+    build: () => buildStillsGraph({ model: 'flux3', quality: 'quality', prompt: STILL, width: 1328, height: 752, seed: SEED }),
+  },
 
   // ---- Edit + image apps (Qwen-Image-Edit 2509). The source is a 1344x768 still. ----
   ...editEntries(),

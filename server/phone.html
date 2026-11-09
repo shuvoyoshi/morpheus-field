@@ -49,6 +49,14 @@
 <body>
   <div class="brand"><img src="__LOGO__" width="20" height="20" alt=""></div>
   <main>
+    <section id="pin" class="card" hidden>
+      <div style="font-weight:700">Enter the PIN</div>
+      <p style="font-size:13px;margin:0 0 6px;color:var(--dim)">This link is on the internet, so it is PIN-protected. Type the 6-digit code shown on your computer.</p>
+      <input id="pincode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••"
+        style="width:100%;font:600 22px/1.2 system-ui;letter-spacing:.35em;text-align:center;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);outline:none">
+      <div class="err" id="pinerr" style="min-height:16px;font-size:13px"></div>
+      <button class="lamp" id="unlock" type="button">Unlock</button>
+    </section>
     <section id="pick">
       <h1>Film <span>the move.</span></h1>
       <p style="margin:14px 0 22px">2 to 12 seconds. Hold the phone the way the shot should be framed.</p>
@@ -84,14 +92,38 @@
 (function () {
   var MAX = Number('__MAX_BYTES__');
   var EXPIRES = Number('__EXPIRES_AT__');
+  var PIN_REQUIRED = '__PIN_REQUIRED__' === 'true';
+  var pin = '';
   var $ = function (id) { return document.getElementById(id); };
   var mb = function (n) { return (n / 1048576).toFixed(n > 1048576 * 10 ? 0 : 1) + ' MB'; };
   var finished = false;
 
   function show(id) {
-    ['pick', 'send', 'fail', 'done'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['pin', 'pick', 'send', 'fail', 'done'].forEach(function (s) { $(s).hidden = s !== id; });
   }
   function fail(msg) { $('why').textContent = msg; show('fail'); }
+
+  // Public/mobile-data links are PIN-gated: confirm the code before filming so a
+  // wrong one is caught up front, and carry it on the upload.
+  function unlock() {
+    var code = $('pincode').value.trim();
+    if (!/^\d{4,8}$/.test(code)) { $('pinerr').textContent = 'Enter the 6-digit code.'; return; }
+    $('pinerr').textContent = 'Checking…';
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', location.pathname.replace(/\/$/, '') + '/check');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('X-Pin', code);
+    xhr.onload = function () {
+      var body = {};
+      try { body = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status === 200) { pin = code; show('pick'); }
+      else { $('pinerr').textContent = body.error || 'Wrong PIN. Check the code on your computer.'; }
+    };
+    xhr.onerror = function () { $('pinerr').textContent = 'Could not reach the computer. Try again.'; };
+    xhr.send();
+  }
+  $('unlock').addEventListener('click', unlock);
+  $('pincode').addEventListener('keydown', function (e) { if (e.key === 'Enter') unlock(); });
 
   var tick = setInterval(function () {
     if (finished) return clearInterval(tick);
@@ -114,6 +146,7 @@
     xhr.open('POST', location.pathname.replace(/\/$/, '') + '/upload');
     xhr.setRequestHeader('Content-Type', type);
     xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name || 'phone'));
+    if (pin) xhr.setRequestHeader('X-Pin', pin);
     xhr.upload.onprogress = function (e) {
       if (!e.lengthComputable) return;
       var p = Math.round((e.loaded / e.total) * 100);
@@ -125,10 +158,11 @@
       var body = {};
       try { body = JSON.parse(xhr.responseText); } catch (e) {}
       if (xhr.status === 200) { finished = true; show('done'); $('foot').textContent = 'Morpheus'; return; }
+      if (xhr.status === 401) { show('pin'); $('pinerr').textContent = body.error || 'Wrong PIN. Enter the code from your computer.'; $('pincode').focus(); return; }
       fail(body.error || ('Upload failed (' + xhr.status + ').'));
       if (xhr.status === 404 || xhr.status === 410) $('retry').hidden = true;
     };
-    xhr.onerror = function () { fail('Lost the connection to your computer. Stay on the same Wi-Fi and try again.'); };
+    xhr.onerror = function () { fail('Lost the connection to your computer. Check your internet and try again.'); };
     xhr.send(file);
   }
 
@@ -136,6 +170,8 @@
     $(id).addEventListener('change', function (e) { send(e.target.files && e.target.files[0]); e.target.value = ''; });
   });
   $('retry').addEventListener('click', function () { show('pick'); });
+
+  if (PIN_REQUIRED) { show('pin'); $('pincode').focus(); } else { show('pick'); }
 })();
 </script>
 </body>

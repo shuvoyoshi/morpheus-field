@@ -148,19 +148,26 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
   for (const c of [
     { name: 'image qwen 16:9 1K', model: 'qwen', prompt: 'a poster that says OPENFIELD in bold type', aspect: '16:9', quality: 'quality', res: '1K', count: 1 },
     { name: 'image flux2 9:16 2K draft x3', model: 'flux2', prompt: 'a paper lantern over tall grass at night', aspect: '9:16', quality: 'draft', res: '2K', count: 3 },
+    { name: 'image qwen21 1:1', model: 'qwen21', prompt: 'a red door', aspect: '1:1', quality: 'quality', res: '1K', count: 1 },
+    { name: 'image krea2 draft', model: 'krea2', prompt: 'a neon sign in the rain', aspect: '16:9', quality: 'draft', res: '1K', count: 1 },
+    { name: 'image zimage 9:16 2K', model: 'zimage', prompt: 'a lighthouse at dusk', aspect: '9:16', quality: 'quality', res: '2K', count: 2 },
+    { name: 'image klein + one reference', model: 'klein', prompt: 'the dog in image 1 on a beach', aspect: '1:1', quality: 'quality', res: '1K', count: 1, refs: [{ token: 'asset:r1', name: 'r1.png' }] },
+    { name: 'image flux3 16:9', model: 'flux3', prompt: 'a snow-capped mountain', aspect: '16:9', quality: 'quality', res: '1K', count: 1 },
+    { name: 'image flux3 + two references', model: 'flux3', prompt: 'the cat from image 1 and the bird from image 2 in a garden', aspect: '1:1', quality: 'quality', res: '1K', count: 1, refs: [{ token: 'asset:r1', name: 'r1.png' }, { token: 'asset:r2', name: 'r2.png' }] },
     { name: 'image qwen + your LoRA', model: 'qwen', prompt: 'a red door', aspect: '1:1', quality: 'draft', res: '1K', count: 1, loras: [{ name: 'my-style.safetensors', strength: 0.8 }] },
     { name: 'image flux2 refs + LoRAs', model: 'flux2', prompt: 'the man in image 1 at a bus stop', aspect: '16:9', quality: 'quality', res: '1K', count: 2,
       loras: [{ name: 'a.safetensors', strength: 1 }, { name: 'b.safetensors', strength: -0.4 }], refs: [{ token: 'asset:r1', name: 'r1.png' }, { token: 'asset:r2', name: 'r2.png' }] },
-  ] as { name: string; model: 'qwen' | 'flux2'; prompt: string; aspect: any; quality: 'draft' | 'quality'; res: any; count: number; loras?: { name: string; strength: number }[]; refs?: { token: string; name: string }[] }[]) {
+  ] as { name: string; model: catalog.ImageModelId; prompt: string; aspect: any; quality: 'draft' | 'quality'; res: any; count: number; loras?: { name: string; strength: number }[]; refs?: { token: string; name: string }[] }[]) {
     const model = IMAGE_MODELS.find((m) => m.id === c.model)!;
     const size = sizeFor(c.aspect, IMAGE_RES.find((r) => r.id === c.res)!.mp);
     const loras = c.loras ?? [];
     const refs = c.refs ?? [];
-    const oracle = expr(bodySrc, { model, quality: c.quality, prompt: c.prompt, size, count: c.count, loras, refs, refsOn: c.model === 'flux2' });
+    const oracle = expr(bodySrc, { model, quality: c.quality, prompt: c.prompt, size, count: c.count, loras, refs, refsOn: !!model.refs });
     same(c.name, imageBody({ model: c.model, prompt: c.prompt, aspect: c.aspect, quality: c.quality, res: c.res, count: c.count, loras, refImages: refs.map((r) => r.token) }), oracle);
   }
-  assert.ok(src.includes("const refsOn = model.id === 'flux2';"), 'Image.tsx: references are FLUX.2 only');
-  assert.throws(() => imageBody({ model: 'qwen', prompt: 'x', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refImages: ['asset:r'] }), /need model flux2/);
+  assert.ok(src.includes('const refsOn = !!model.refs;'), 'Image.tsx: references follow the model');
+  assert.throws(() => imageBody({ model: 'qwen', prompt: 'x', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refImages: ['asset:r'] }), /Reference pictures need a model that takes them/);
+  assert.throws(() => imageBody({ model: 'zimage', prompt: 'x', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refImages: ['asset:r'] }), /Reference pictures need a model that takes them/);
 }
 
 // ---------- Director.tsx ----------
@@ -546,11 +553,11 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
   // The page's first generate call is its Remove background preview; the object body is in go().
   const bodySrc = between(src.slice(src.indexOf('async function go()')), 'const r = await api.generate(', ');\n      setSelected(');
   for (const c of [
-    { name: 'object from a take, draft, cutout', source: { token: 'asset:t', kind: 'image', name: 'take 62', w: 1024, h: 1024, seconds: 0, takeId: 62, prompt: 'Product photo of a matte teal enamel stovetop kettle with a curved wooden handle' }, quality: 'draft', cutout: true, count: 1 },
-    { name: 'object from a dropped file, high, own alpha, 3 takes', source: { token: 'asset:f', kind: 'image', name: 'chair cutout', w: 900, h: 1200, seconds: 0 }, quality: 'quality', cutout: false, count: 3 },
+    { name: 'object from a take, TRELLIS.2 draft, cutout', model: 'trellis', source: { token: 'asset:t', kind: 'image', name: 'take 62', w: 1024, h: 1024, seconds: 0, takeId: 62, prompt: 'Product photo of a matte teal enamel stovetop kettle with a curved wooden handle' }, quality: 'draft', cutout: true, count: 1 },
+    { name: 'object from a dropped file, Pixal3D high, own alpha, 3 takes', model: 'pixal3d', source: { token: 'asset:f', kind: 'image', name: 'chair cutout', w: 900, h: 1200, seconds: 0 }, quality: 'quality', cutout: false, count: 3 },
   ] as const) {
     // MCP has no cutout preview: the page with none showing.
-    const oracle = expr(bodySrc, { source: c.source, quality: c.quality, cutout: c.cutout, count: c.count, usingCut: false, cut: undefined });
+    const oracle = expr(bodySrc, { source: c.source, model: c.model, quality: c.quality, cutout: c.cutout, count: c.count, usingCut: false, cut: undefined });
     same(c.name, objectBody(c as any), oracle);
   }
   assert.throws(() => objectBody({ source: { token: 'x', kind: 'video', name: 'v', w: 1, h: 1, seconds: 3 }, quality: 'draft', cutout: true, count: 1 }), /needs a still/);

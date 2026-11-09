@@ -17,6 +17,7 @@
     "test:ltxfiles": "tsx scripts/test-ltxfiles.ts",
     "test:llm-planner": "tsx scripts/test-llm-planner.ts",
     "test:agent": "tsx scripts/test-agent.ts",
+    "test:takeref": "tsx scripts/test-takeref.ts",
     "test:llm-config": "tsx scripts/test-llm-config.ts",
     "test:net": "tsx scripts/test-net.ts",
     "test:lru": "tsx scripts/test-lru.ts",

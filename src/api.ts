@@ -80,6 +80,17 @@ export interface Status {
   renderTier?: TierState;
   /** Whole-clip or chunked video decode (Setup > Video decode). */
   videoDecode?: VideoDecodeState;
+  /** Free idle models on a 1-minute tick while the queue is empty (Setup > Engine). */
+  vramAutoClear?: boolean;
+  /** Machine vitals (server/sysstats.ts): usage in %, per-GPU stats. */
+  sys?: {
+    cpu: number | null;
+    ram: number;
+    disk: number | null;
+    gpus: { name: string; usage: number; vramUsedGb: number; vramTotalGb: number; tempC: number }[];
+  };
+  /** The auto-clear countdown: interval + when it next fires (server epoch ms). */
+  vramClear?: { on: boolean; intervalMs: number; nextAt: number | null };
   /** Set when OPENFIELD_LLM_REASONING overrides the Director's "Think first" switch (its reasoning_effort value). */
   plannerReasoning?: string | null;
   /** Set when the server runs as the judge preview (server/judge.ts). */
@@ -95,6 +106,10 @@ export interface PhoneSession {
   port: number;
   maxBytes: number;
   network: { wsl: 'none' | 'mirrored' | 'nat'; bindHost: string; urlHost: string; warning: string | null; commands: string[] };
+  /** Auth PIN for mobile-data/public mode, or null for LAN (token-only) mode. */
+  pin?: string | null;
+  /** True when the link is exposed over the internet (a tunnel), not just the LAN. */
+  public?: boolean;
 }
 
 /** Live phone state, relayed over /live. `result` arrives with 'received'. */
@@ -232,6 +247,9 @@ export const api = {
   /** Set the machine-wide video decode; null goes back to the default (OPENFIELD_VIDEO_DECODE or the GPU). */
   setVideoDecode: (videoDecode: VideoDecode | null) =>
     j<{ videoDecode: VideoDecodeState }>('/api/settings', { method: 'PUT', body: JSON.stringify({ videoDecode }) }),
+  /** Free idle models on a 1-minute tick while the queue is empty. Off by default. */
+  setVramClear: (vramAutoClear: boolean) =>
+    j<{ vramAutoClear: boolean }>('/api/settings', { method: 'PUT', body: JSON.stringify({ vramAutoClear }) }),
   takes: (projectId: number | null) => j<Take[]>(`/api/takes${projectId ? `?project=${projectId}` : ''}`),
   getTake: (id: number) => j<Take>(`/api/takes/${id}`),
   projects: () => j<Project[]>('/api/projects'),
@@ -283,6 +301,8 @@ export const api = {
   phoneStart: () => j<PhoneSession>('/api/phone/start', { method: 'POST' }),
   /** Close our session only: a newer one from another window keeps running. */
   phoneStop: (id: string) => j<{ ok: true }>('/api/phone/stop', { method: 'POST', body: JSON.stringify({ id }) }),
+  /** The live phone session, if any (to adopt one opened from another window). */
+  phoneStatus: () => j<{ session: PhoneSession | null }>('/api/phone'),
   /** Open the whole app on a paired phone (Setup > Phone). */
   pairStart: () => j<PairSession>('/api/phoneapp/start', { method: 'POST' }),
   pairStop: (id: string) => j<{ ok: true }>('/api/phoneapp/stop', { method: 'POST', body: JSON.stringify({ id }) }),

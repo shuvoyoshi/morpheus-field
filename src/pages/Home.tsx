@@ -26,12 +26,12 @@ function groupOf(t: Take): string {
     case 'sound': return 'Add sound';
     case 'audio': return 'Audio';
     case 'upscale': return 'Upscale';
-    case 'object': return 'Object';
+    case 'object': return 'Model';
     case 'hdr': return 'Finish';
     case 'seam': return 'Seam';
     case 'stage': return 'Stage';
     case 'cast': return 'Cast';
-    default: return t.kind === 'audio' ? 'Audio' : t.kind === 'object' ? 'Object' : t.kind === 'still' ? 'Image' : 'Video';
+    default: return t.kind === 'audio' ? 'Audio' : t.kind === 'object' ? 'Model' : t.kind === 'still' ? 'Image' : 'Video';
   }
 }
 

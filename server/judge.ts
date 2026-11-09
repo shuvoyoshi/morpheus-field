@@ -164,7 +164,7 @@ export function limitRenderBody(b: any): string | null {
   if (!b || typeof b !== 'object') return null;
   delete b.projectId;
   if (b.kind === 'hdr') return 'Finish in HDR is not part of the judge preview.';
-  if (b.kind === 'object' && b.quality === 'quality') return 'Object renders at Draft in the judge preview.';
+  if (b.kind === 'object' && b.quality === 'quality') return 'Model renders at Draft in the judge preview.';
   if (b.kind === 'upscale' && b.mode === 'redraw' && b.model === '7b') return 'Upscale Redraw 7B is not part of the judge preview. Use 3B.';
   if (b.kind === 'upscale' && b.upHeight !== undefined) b.upHeight = 1080;
   b.resolution = limitTier(b.resolution);

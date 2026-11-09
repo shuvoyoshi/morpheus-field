@@ -5,7 +5,7 @@
 Everything added since the first build (0.1.0). Measurements and implementation notes follow under "Details".
 
 - **Stage**: block a shot in 3D (boxes, figures, walls, .glb models, a camera path and a lens) and render it with the LTX-2.5 Layout-to-Render IC-LoRA. Look frames come from Z-Image Turbo on the depth pass. Object takes place into the set as props. MCP `stage_render`.
-- **Object**: one still to a textured GLB on TRELLIS.2, with a turntable, a three.js viewer, Make 3D on any still and a 3D library filter. MCP `make_3d`.
+- **Model** (formerly Object): one still to a textured GLB on TRELLIS.2 or Pixal3D (DINOv3-NAF conditioning, per-image camera FoV estimated by MoGe), with a turntable, a three.js viewer, Make 3D on any still and a 3D library filter. MCP `make_3d` with a `model` parameter.
 - **Director**: genres, an era scrubber from 1960 to 2020 graded on the output, and speed ramps.
 - **Scene**: a written scene becomes a 2 to 6 shot list from a local LLM, rendered and cut into one take; edit, reorder and re-roll single shots. MCP `direct_scene`.
 - **Cast**: save a character, prop or place from pictures and `@mention` it in any prompt; videos hold it on an LTX-2.5 Ingredients reference sheet.
@@ -19,6 +19,7 @@ Everything added since the first build (0.1.0). Measurements and implementation 
 - **Finish in HDR**: ACEScg EXR sequence, HLG HEVC and HLG ProRes masters through the LTX-2.5 SDR-to-HDR IC-LoRA, checked on the way out.
 - **Your LoRAs**: a LoRA chip on Image (Qwen-Image, FLUX.2) and Video (LTX-2.5, cast sheets included) stacks up to four of your own LoRAs with a strength each. The server reads every file's safetensors header to learn which model it was trained for, offers it only there, and refuses a mismatch with a readable error; task LoRAs (IC-LoRAs, step distills) stay out of the menu. MCP `list_loras`.
 - **FLUX.2 references**: up to six reference pictures on an Image take, and `@cast` on FLUX.2 now feeds the cast pictures in as FLUX.2 reference latents rather than composing through Qwen-Image-Edit, which keeps photographic skin.
+- **Image, expanded**: the Image app now offers every installed image model — Qwen-Image, FLUX.2 dev, Qwen-Image 2.1, Krea-2 Turbo, Z-Image Turbo, FLUX.2 Klein, FLUX.3 — each with its own ComfyUI workflow and a Draft/High sampling mode. FLUX.2 dev and Klein take reference pictures (identity and wardrobe carried over). The app is now Agent-style: a left history rail (your images grouped by day, with bulk select and delete) beside a workspace with the model controls and prompt. New `qwen21`, `krea2`, `zimage`, `klein` and `flux3` bundles (manual install). MCP `generate_image` now takes any of them.
 - **Stage look frames** name the blocking figures as real people and soften the depth pass slightly, so a figure stand-in renders as a person, never as its capsule silhouette.
 - **Hardening**: the local API refuses requests sent by pages on other sites (Origin check on top of the Host check), project folders stay inside the output folder, Stage and Object load on demand (main bundle 1.2 MB to 477 kB), phone layouts scroll as a page, and a take waiting behind another app's jobs shows "Waiting for the engine" instead of "Rendering".
 - **MCP server**: 31 stdio tools drive every app; `npm run mcp:check` pins request bodies to the page code.

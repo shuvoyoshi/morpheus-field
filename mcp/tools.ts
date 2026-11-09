@@ -27,7 +27,7 @@ import {
 import { EFFECTS, EFFECT_QUALITY, effectPrompt } from '../src/effects.ts';
 import { APP_MAX_TIER, RENDER_TIERS, appTier, tierCapNote, tiersUpTo, type RenderTier, type TierApp } from '../src/renderTier.ts';
 import { CAMERA_MOVES, LENS_MAX, LENS_MIN, MAX_KEYS, MAX_PROPS, MODEL_PROP_SIZE, PROP_DEFAULTS, STAGE_SECONDS, cleanStageScene, stageFrames, stageSize, stageTier, type CameraKey, type StageProp, type Vec3 } from '../src/stage.ts';
-import { BASE, api, finishFileUrl, getTake, localPath, mediaUrl, posterImage, resolveInput, settingsOf, type Asset, type Take } from './client.ts';
+import { BASE, api, finishFileUrl, getTake, localPath, mediaUrl, posterImage, resolveInput, settingsOf, takeIdOf, type Asset, type Take } from './client.ts';
 import { H3_TURBO } from '../src/presets.ts';
 
 // ---------- content ----------
@@ -140,7 +140,7 @@ const loras = z.array(z.object({
 const aspect = z.enum(ASPECT_IDS);
 const presetIds = PRESETS.map((p) => p.id) as [string, ...string[]];
 const videoModel = z.enum(VIDEO_MODELS.map((m) => m.id) as ['ltx25', 'h3']).default('ltx25')
-  .describe('ltx25 (default, commercial-friendly). h3 = MiniMax H3 (text, image, first+last-frame or references); its license excludes the US, EU, UK and South Korea.');
+  .describe('ltx25 (default). h3 = MiniMax H3 (text, image, first+last-frame or references).');
 const tierArg = (app: TierApp) => z.enum(tiersUpTo(APP_MAX_TIER[app]).map((t) => t.id) as [RenderTier, ...RenderTier[]]).optional()
   .describe(`Render size. Default: the machine-wide size from Setup. ${tiersUpTo(APP_MAX_TIER[app]).map((t) => `${t.id}: ${t.note}`).join(' ')}${tierCapNote(app) ? ` ${tierCapNote(app)}` : ''}`);
 const videoRes = tierArg('video');
@@ -149,8 +149,8 @@ const videoRes = tierArg('video');
 async function tierFor(app: TierApp, asked: RenderTier | undefined): Promise<RenderTier> {
   return appTier(app, asked ?? (await api.settings()).renderTier.tier);
 }
-const imageModel = z.enum(IMAGE_MODELS.map((m) => m.id) as ['qwen', 'flux2']).default('qwen')
-  .describe('qwen = Qwen-Image (Apache 2.0, text/layout). flux2 = FLUX.2 dev (non-commercial license, photoreal).');
+const imageModel = z.enum(IMAGE_MODELS.map((m) => m.id) as [string, ...string[]]).default('qwen')
+  .describe(IMAGE_MODELS.map((m) => `${m.id} = ${m.label} (${m.warn ?? m.license})`).join('; '));
 
 const RO = { readOnlyHint: true, openWorldHint: false } as const;
 const GPU = { readOnlyHint: false, destructiveHint: false, openWorldHint: false } as const;
@@ -183,8 +183,8 @@ function sourceRef(a: Asset, kind: SourceRef['kind']): SourceRef {
   return { token: a.token, kind, name: a.name, w: dims.w, h: dims.h, seconds: a.clip?.seconds ?? 0, takeId: a.takeId, prompt: a.prompt };
 }
 async function stillOrClip(ref: string): Promise<SourceRef> {
-  const m = /^take:(\d+)$/i.exec(ref.trim());
-  const still = m ? (await getTake(Number(m[1]))).kind === 'still' : /\.(png|jpe?g|webp)$/i.test(ref.trim());
+  const takeId = takeIdOf(ref);
+  const still = takeId !== undefined ? (await getTake(takeId)).kind === 'still' : /\.(png|jpe?g|webp)$/i.test(ref.trim());
   return still ? sourceRef(await resolveInput(ref, 'image'), 'image') : sourceRef(await resolveInput(ref, 'video'), 'video');
 }
 
@@ -419,7 +419,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'generate_image', title: 'Generate image',
-    description: 'Image app: stills from Qwen-Image or FLUX.2. Finished stills can feed generate_video / make_loop / direct_shot as take:<id>. A prompt that @mentions cast is composed from their pictures: by Qwen-Image-Edit 2509 on qwen, or as FLUX.2 reference latents on flux2 (photographic skin, identity held).',
+    description: 'Image app: stills from any installed image model — Qwen-Image, FLUX.2 dev, Qwen-Image 2.1, Krea-2 Turbo, Z-Image Turbo, FLUX.2 Klein, FLUX.3. Finished stills can feed generate_video / make_loop / direct_shot as take:<id>. A prompt that @mentions cast is composed from their pictures: by Qwen-Image-Edit 2509 on qwen, or as reference latents on flux2 / klein (photographic skin, identity held).',
     inputSchema: {
       prompt: z.string().min(1).describe('The image. @Name brings in a cast member (list_cast). With references, point at them as "the person in image 1".'),
       model: imageModel,
@@ -428,7 +428,7 @@ export const TOOLS: ToolDef[] = [
       resolution: z.enum(IMAGE_RES.map((r) => r.id) as ['1K', '2K']).default('1K'),
       count,
       references: z.array(inputRef('Reference picture')).max(6).optional()
-        .describe('flux2 only: up to 6 pictures whose people, clothes and objects carry into a new photograph. Numbered in order, before any @cast pictures.'),
+        .describe('flux2 / klein only: up to 6 pictures whose people, clothes and objects carry into a new photograph. Numbered in order, before any @cast pictures.'),
       loras,
     },
     annotations: GPU,
@@ -612,10 +612,10 @@ export const TOOLS: ToolDef[] = [
     annotations: GPU,
     handler: safe(async (a) => {
       const ref = a.source.trim();
-      const m = /^take:(\d+)$/i.exec(ref);
+      const takeId = takeIdOf(ref);
       let source: { kind: 'image' | 'video'; take?: number; token?: string; name: string };
-      if (m) {
-        const t = await getTake(Number(m[1]));
+      if (takeId !== undefined) {
+        const t = await getTake(takeId);
         if (t.status !== 'done') throw new Error(`take ${t.id} is ${t.status}, not done`);
         source = { kind: t.kind === 'still' ? 'image' : 'video', take: t.id, name: `take ${t.id}` };
       } else {
@@ -732,9 +732,8 @@ export const TOOLS: ToolDef[] = [
       const img = await resolveInput(a.image, 'image');
       const refs = await Promise.all((a.extra_images ?? []).map((r: any) => resolveInput(r, 'image')));
       const mask = a.mask ? await resolveInput(a.mask, 'image') : undefined;
-      const take = /^take:(\d+)$/i.exec(a.image.trim());
       const body = editBody({
-        mode: a.mode, source: { token: img.token, take: take ? Number(take[1]) : undefined }, refs: refs.map((r) => r.token), mask: mask?.token,
+        mode: a.mode, source: { token: img.token, take: img.takeId }, refs: refs.map((r) => r.token), mask: mask?.token,
         text: a.instruction, chips: options, direction: a.direction, expandTo: a.aspect, zoom: 1 - a.pull_back, quality: a.quality, count: a.count,
       });
       return queue(wire(body), { mode: a.mode, results: (body.variants as unknown[]).length });
@@ -893,11 +892,11 @@ export const TOOLS: ToolDef[] = [
       if (a.model && (a.mode === 'dream' || (a.mode === 'sharpen') !== ['esrgan', 'ultrasharp'].includes(a.model))) {
         throw new Error(`model ${a.model} does not apply to mode ${a.mode}`);
       }
-      const m = /^take:(\d+)$/i.exec(ref.trim());
+      const takeId = takeIdOf(ref);
       let source: { kind: 'video' | 'image'; take?: number; token?: string; name: string };
       let dims: { w: number; h: number } | undefined;
-      if (m) {
-        const t = await getTake(Number(m[1]));
+      if (takeId !== undefined) {
+        const t = await getTake(takeId);
         if (t.status !== 'done') throw new Error(`take ${t.id} is ${t.status}, not done`);
         const s = settingsOf(t);
         source = { kind: t.kind === 'still' ? 'image' : 'video', take: t.id, name: s.shotName || t.shot_name };
@@ -926,13 +925,15 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'make_3d', title: 'Make 3D',
     description: [
-      'Object app (TRELLIS.2, local): one still becomes a textured 3D model, saved as a GLB take (PBR base color, metallic, roughness; high also bakes a normal map and AO).',
+      'Model app (local): one still becomes a textured 3D model, saved as a GLB take (PBR base color, metallic, roughness; high also bakes a normal map and AO).',
+      'Two engines: TRELLIS.2 (the steady default) and Pixal3D (Tencent, a DINOv3-NAF conditioning with a per-image camera FoV estimated by MoGe; detail-hungry, good on textured subjects).',
       'BiRefNet cuts the subject out first unless remove_background is false (then the PNG\'s own transparency is used). Works best on one subject, whole in frame, on a plain background.',
       OBJECT_DETAIL.map((d) => `quality ${d.id === 'quality' ? 'high' : d.id}: ${d.note}`).join(' '),
       'The take\'s output_path is the .glb; get_take also returns glb_url (served as model/gltf-binary), a turntable mp4 and the isolated subject. The preview image is the first turntable frame.',
     ].join(' '),
     inputSchema: {
       image: inputRef('The still to turn into a model (png, jpg or webp)'),
+      model: z.enum(['trellis', 'pixal3d']).default('trellis').describe('Engine: trellis = TRELLIS.2 (the steady default), pixal3d = Tencent Pixal3D with MoGe camera FoV'),
       quality: z.enum(['draft', 'high']).default('draft').describe('draft to check the shape, high for the keeper'),
       remove_background: z.boolean().default(true).describe('Cut the subject out with BiRefNet first'),
       count,
@@ -940,7 +941,7 @@ export const TOOLS: ToolDef[] = [
     annotations: GPU,
     handler: safe(async (a) => {
       const src = sourceRef(await resolveInput(a.image, 'image'), 'image');
-      return queue(wire(objectBody({ source: src, quality: a.quality === 'high' ? 'quality' : 'draft', cutout: a.remove_background, count: a.count })), { quality: a.quality });
+      return queue(wire(objectBody({ source: src, quality: a.quality === 'high' ? 'quality' : 'draft', cutout: a.remove_background, count: a.count, model: a.model })), { quality: a.quality, model: a.model });
     }),
   },
   {

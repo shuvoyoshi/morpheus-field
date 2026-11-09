@@ -9,7 +9,7 @@ import { artFor } from '../catalog';
 import { EFFECTS, effectById, effectPrompt, effectSize, type EffectDef } from '../effects';
 import { linkProps, setParams, useRoute } from '../router';
 import { inFeed, isImage, isModel, settingsOf, takeHandoff, toast, useStore } from '../store';
-import { ChipMenu, Icon, MediaCard, Spill, Stepper, Switch, TierChip, fmtSeconds, useEstimate, useTierChoice } from '../ui';
+import { ChipMenu, Icon, MediaCard, Spill, Stepper, Switch, TierChip, fmtSeconds, useEstimate, useTierChoice, RailHandle, useRail } from '../ui';
 import Viewer, { recreate, remove } from '../Viewer';
 import { DropWell, probeClip } from './Mirror';
 import { usePageDrop } from '../drop';
@@ -148,8 +148,11 @@ export default function EffectsPage() {
     if (n) setViewing(n.id);
   };
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '360px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <Spill src={effectClip(fx.id)} video key={fx.id} />
         <button type="button" className="preset-hero" onClick={() => setParams({ tab: 'effects' })}>

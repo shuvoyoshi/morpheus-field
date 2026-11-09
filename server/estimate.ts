@@ -19,7 +19,11 @@ export function ranLike(q: Record<string, string | undefined>, t: EstimateTake):
   // Apps with their own pipeline (Remove background, Restyle, Swap) only answer for themselves.
   if (q.app && s.app !== q.app) return false;
   if (q.mode && s.mode !== q.mode) return false;
-  if (q.model && (s.videoModel || s.model) !== q.model) return false;
+  // Object takes from before the engine choice are all TRELLIS.2.
+  if (q.model) {
+    const m = s.videoModel || s.model || (t.kind === 'object' ? 'trellis' : undefined);
+    if (m !== q.model) return false;
+  }
   if (q.quality && s.quality && s.quality !== q.quality) return false;
   // H3 with a step distill runs several times faster than full sampling: never mix the two.
   if (q.turbo && (s.h3Turbo || 'none') !== q.turbo) return false;

@@ -20,7 +20,7 @@ folder, and `HF_TOKEN` for the gated repos. Downloads resume, so an
 interrupted 21 GB pull does not start over.
 
 The core install is **LTX-2.5 video + Qwen-Image stills**, about 
-**72 GB**. Everything here is about 318 GB.
+**72 GB**. Everything here is about 384 GB.
 
 ## Bundles
 
@@ -29,7 +29,7 @@ The core install is **LTX-2.5 video + Qwen-Image stills**, about
 Video + Loop modes on the LTX-2.5 engine. The recommended starting point: it is the only video engine here whose license permits commercial delivery, and its first/last-frame mode closes seamless loops without a post dissolve.
 
 - **Size** 39.8 GB · part of the core install
-- **License** LTX-2.x Community License Agreement (Aug 11, 2026). Free for any use, commercial included, if you (and your affiliates) earn under $10M a year; at $10M or more a paid Commercial Use Agreement is required for anything beyond non-commercial use. Acceptable-use restrictions apply. The Gemma 4 based text encoder ships in this repo under the same license.
+- **License** LTX-2.x Community License Agreement (Aug 11, 2026). The Gemma 4 based text encoder ships in this repo under the same license.
 
 | File | Goes in | Size | Source |
 | --- | --- | --- | --- |
@@ -97,7 +97,7 @@ The v0.1 step-distill LoRA that powers H3 Turbo mode (8 steps instead of 20). Wi
 Adds FLUX.2 as a second stills model — the photorealism lead where Qwen is the text and layout specialist.
 
 - **Size** 50.9 GB · optional
-- **License** FLUX Non-Commercial License (Black Forest Labs). The Turbo LoRA is a FLUX.2-dev derivative under the same terms; the Mistral text encoder is redistributed here under it too.
+- **License** FLUX.2 dev (Black Forest Labs).
 
 | File | Goes in | Size | Source |
 | --- | --- | --- | --- |
@@ -105,6 +105,72 @@ Adds FLUX.2 as a second stills model — the photorealism lead where Qwen is the
 | `mistral_3_small_flux2_fp4_mixed.safetensors` | `models/text_encoders/` | 12.3 GB | [Comfy-Org/flux2-dev](https://huggingface.co/Comfy-Org/flux2-dev/blob/main/split_files/text_encoders/mistral_3_small_flux2_fp4_mixed.safetensors) |
 | `flux2-vae.safetensors` | `models/vae/` | 0.3 GB | [Comfy-Org/flux2-dev](https://huggingface.co/Comfy-Org/flux2-dev/blob/main/split_files/vae/flux2-vae.safetensors) |
 | `Flux2TurboComfyv2.safetensors` | `models/loras/` | 2.8 GB | [Comfy-Org/flux2-dev](https://huggingface.co/Comfy-Org/flux2-dev/blob/main/split_files/loras/Flux2TurboComfyv2.safetensors) |
+
+### Qwen-Image 2.1 stills `qwen21`
+
+Adds Qwen-Image 2.1 as a stills model: sharper text, layout and detail than the original Qwen.
+
+- **Size** 16.4 GB · optional
+- **License** Qwen-Image 2.1 (Apache 2.0) with its Qwen3-VL 8B encoder.
+
+| File | Goes in | Size | Source |
+| --- | --- | --- | --- |
+| `qwen_image_2.1_int8_convrot.safetensors` | `models/diffusion_models/` | — | manual — put it in the folder yourself (not downloaded) |
+| `qwen3vl_8b_int8_convrot.safetensors` | `models/text_encoders/` | — | manual — put it in the folder yourself (not downloaded) |
+| `qwen_image_2.1_vae_bf16.safetensors` | `models/vae/` | — | manual — put it in the folder yourself (not downloaded) |
+| `p_qwen_image_2.1_8step_v0.1.safetensors` | `models/loras/` | — | manual — put it in the folder yourself (not downloaded) |
+
+### Krea-2 Turbo stills `krea2`
+
+Adds Krea-2 Turbo: fast few-step stills (8 steps, CFG 1) with strong style control.
+
+- **Size** 17.4 GB · optional
+- **License** Krea-2 Turbo (Krea).
+
+| File | Goes in | Size | Source |
+| --- | --- | --- | --- |
+| `krea2_turbo_fp8_scaled.safetensors` | `models/diffusion_models/` | — | manual — put it in the folder yourself (not downloaded) |
+| `qwen3vl_4b_fp8_scaled.safetensors` | `models/text_encoders/` | — | manual — put it in the folder yourself (not downloaded) |
+| `qwen_image_vae.safetensors` | `models/vae/` | 0.3 GB | [Comfy-Org/Qwen-Image_ComfyUI](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/blob/main/split_files/vae/qwen_image_vae.safetensors) |
+
+### Z-Image Turbo stills `zimage`
+
+Adds Z-Image Turbo: fast, clean stills (AuraFlow, few steps, CFG 1).
+
+- **Size** 19.3 GB · optional
+- **License** Z-Image Turbo (Alibaba).
+
+| File | Goes in | Size | Source |
+| --- | --- | --- | --- |
+| `z_image_turbo_bf16.safetensors` | `models/diffusion_models/` | — | manual — put it in the folder yourself (not downloaded) |
+| `qwen_3_4b.safetensors` | `models/text_encoders/` | — | manual — put it in the folder yourself (not downloaded) |
+| `ae.safetensors` | `models/vae/` | 0.3 GB | [Comfy-Org/z_image_turbo](https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/split_files/vae/ae.safetensors) |
+
+### FLUX.2 Klein stills `klein`
+
+Adds FLUX.2 Klein 9B: a compact, fast FLUX.2 that also takes reference pictures (identity and wardrobe carried over).
+
+- **Size** 17.9 GB · optional
+- **License** FLUX.2 Klein 9B (Black Forest Labs) with its Qwen3-VL 8B encoder.
+
+| File | Goes in | Size | Source |
+| --- | --- | --- | --- |
+| `flux-2-klein-base-9b-fp8.safetensors` | `models/diffusion_models/` | — | manual — put it in the folder yourself (not downloaded) |
+| `qwen3vl_8b_int8_convrot.safetensors` | `models/text_encoders/` | — | manual — put it in the folder yourself (not downloaded) |
+| `flux2-vae.safetensors` | `models/vae/` | 0.3 GB | [Comfy-Org/flux2-dev](https://huggingface.co/Comfy-Org/flux2-dev/blob/main/split_files/vae/flux2-vae.safetensors) |
+
+### FLUX.3 stills `flux3`
+
+Adds FLUX.3 (a Flux2-architecture model): the newest FLUX.
+
+- **Size** 10.2 GB · optional
+- **License** FLUX.3 (Black Forest Labs) with its Qwen3-VL 4B encoder.
+
+| File | Goes in | Size | Source |
+| --- | --- | --- | --- |
+| `flux3-image-klein-base-int8-convrot.safetensors` | `models/diffusion_models/` | — | manual — put it in the folder yourself (not downloaded) |
+| `qwen3vl_4b_int8_convrot.safetensors` | `models/text_encoders/` | — | manual — put it in the folder yourself (not downloaded) |
+| `flux2-vae.safetensors` | `models/vae/` | 0.3 GB | [Comfy-Org/flux2-dev](https://huggingface.co/Comfy-Org/flux2-dev/blob/main/split_files/vae/flux2-vae.safetensors) |
 
 ### Upscale: Sharpen `upres`
 
@@ -124,7 +190,7 @@ Sharpen mode of the Upscale app: a 4x ESRGAN pass downsampled to a clean 2x, opt
 The 4x-UltraSharp option in Sharpen mode: crisper edges than RealESRGAN on clean renders. Needs the upres bundle.
 
 - **Size** 0.1 GB · optional
-- **License** 4x-UltraSharp: CC BY-NC-SA 4.0, Kim2091.
+- **License** 4x-UltraSharp (Kim2091).
 
 | File | Goes in | Size | Source |
 | --- | --- | --- | --- |
@@ -274,7 +340,7 @@ Remove background on stills and clips: BiRefNet pulls a soft foreground matte (h
 Finds a subject or an object from a word or a click and follows it through a clip (SAM3_VideoTrack). Keeps the clip cut out to the named subject (steady and tracked modes) and draws the mask for Object swap. Core ComfyUI nodes (0.38 or newer).
 
 - **Size** 1.8 GB · optional
-- **License** Meta SAM License: royalty-free, commercial use allowed; excludes military / ITAR uses and reverse engineering; publications must acknowledge SAM.
+- **License** Meta SAM License.
 
 | File | Goes in | Size | Source |
 | --- | --- | --- | --- |
@@ -321,9 +387,9 @@ The look frame for a Stage shot: Z-Image Turbo with the Fun ControlNet Union rea
 | `ae.safetensors` | `models/vae/` | 0.34 GB | [Comfy-Org/z_image_turbo](https://huggingface.co/Comfy-Org/z_image_turbo/blob/main/split_files/vae/ae.safetensors) |
 | `Z-Image-Turbo-Fun-Controlnet-Union.safetensors` | `models/model_patches/` | 3.1 GB | [alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union](https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/blob/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors) |
 
-### Object (image to 3D, TRELLIS.2) `trellis2`
+### Model (image to 3D, TRELLIS.2) `trellis2`
 
-The Object app and Make 3D on any still: TRELLIS.2 builds a textured mesh (GLB, PBR base color, metallic, roughness; High adds a baked normal map and AO) from one picture, through ComfyUI 0.38 built-in nodes. BiRefNet cuts the subject out first. bf16 weights, about 14 GB.
+The Model app and Make 3D on any still: TRELLIS.2 builds a textured mesh (GLB, PBR base color, metallic, roughness; High adds a baked normal map and AO) from one picture, through ComfyUI 0.38 built-in nodes. BiRefNet cuts the subject out first. bf16 weights, about 14 GB.
 
 - **Size** 14 GB · optional
 - **License** TRELLIS.2 (microsoft/TRELLIS.2-4B, repackaged by Comfy-Org/TRELLIS.2): MIT, the DiT and both VAEs. BiRefNet (ZhengPeng7/BiRefNet, repackaged by Comfy-Org/BiRefNet): MIT. The DINOv3 ViT-L image encoder (facebook/dinov3, repackaged in Comfy-Org/TRELLIS.2) is under the Meta DINOv3 License: royalty-free, commercial use allowed, with acceptable-use exclusions (military and ITAR uses, reverse engineering); the Comfy repo tags it MIT, but the upstream weights carry the DINOv3 License (and Meta gates its own repo behind a manual approval).
@@ -335,6 +401,24 @@ The Object app and Make 3D on any still: TRELLIS.2 builds a textured mesh (GLB, 
 | `trellis_2_texture_vae_bf16.safetensors` | `models/vae/` | 0.95 GB | [Comfy-Org/TRELLIS.2](https://huggingface.co/Comfy-Org/TRELLIS.2/blob/main/vae/trellis_2_texture_vae_bf16.safetensors) |
 | `dino_v3_vit_l.safetensors` | `models/clip_vision/` | 1.21 GB | [Comfy-Org/TRELLIS.2](https://huggingface.co/Comfy-Org/TRELLIS.2/blob/main/clip_vision/dino_v3_vit_l.safetensors) |
 | `birefnet.safetensors` | `models/background_removal/` | 0.44 GB | [Comfy-Org/BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet/blob/main/background_removal/birefnet.safetensors) |
+
+### Model (image to 3D, Pixal3D) `pixal3d`
+
+The Model app on Pixal3D, the second engine: TencentARC Pixal3D (Comfy-Org repack) conditions the same TRELLIS.2 stage pipeline on a DINOv3-NAF encoder and a per-image camera FoV estimated by MoGe, then bakes PBR textures onto the mesh the same way. int8 convrot weights, about 12 GB with the shared VAEs, BiRefNet cutout and both MoGe ViT-L estimators.
+
+- **Size** 16.2 GB · optional
+- **License** Pixal3D (TencentARC/Pixal3D, repackaged by Comfy-Org/Pixal3D): MIT. MoGe (microsoft/moge, Ruicheng/moge-vitl + moge-2-vitl, repackaged by Comfy-Org/MoGe): MIT. The shared TRELLIS.2 shape/texture VAEs and BiRefNet are MIT; the DINOv3 ViT-L NAF encoder carries the Meta DINOv3 License, as in the trellis2 bundle (royalty-free, commercial use allowed, with acceptable-use exclusions).
+
+| File | Goes in | Size | Source |
+| --- | --- | --- | --- |
+| `pixal3d_int8_convrot.safetensors` | `models/diffusion_models/` | 5.58 GB | [Comfy-Org/Pixal3D](https://huggingface.co/Comfy-Org/Pixal3D/blob/main/diffusion_models/pixal3d_int8_convrot.safetensors) |
+| `pixal3d_multiview_int8_convrot.safetensors` | `models/diffusion_models/` | 5.58 GB | [Comfy-Org/Pixal3D](https://huggingface.co/Comfy-Org/Pixal3D/blob/main/diffusion_models/pixal3d_multiview_int8_convrot.safetensors) |
+| `dino_v3_L_naf_fp32.safetensors` | `models/clip_vision/` | 1.22 GB | [Comfy-Org/Pixal3D](https://huggingface.co/Comfy-Org/Pixal3D/blob/main/clip_vision/dino_v3_L_naf_fp32.safetensors) |
+| `trellis_2_shape_vae_bf16.safetensors` | `models/vae/` | 1.1 GB | [Comfy-Org/Pixal3D](https://huggingface.co/Comfy-Org/Pixal3D/blob/main/vae/trellis_2_shape_vae_bf16.safetensors) |
+| `trellis_2_texture_vae_bf16.safetensors` | `models/vae/` | 0.95 GB | [Comfy-Org/Pixal3D](https://huggingface.co/Comfy-Org/Pixal3D/blob/main/vae/trellis_2_texture_vae_bf16.safetensors) |
+| `birefnet.safetensors` | `models/background_removal/` | 0.44 GB | [Comfy-Org/BiRefNet](https://huggingface.co/Comfy-Org/BiRefNet/blob/main/background_removal/birefnet.safetensors) |
+| `moge_1_vitl_fp16.safetensors` | `models/geometry_estimation/` | 0.63 GB | [Comfy-Org/MoGe](https://huggingface.co/Comfy-Org/MoGe/blob/main/geometry_estimation/moge_1_vitl_fp16.safetensors) |
+| `moge_2_vitl_normal_fp16.safetensors` | `models/geometry_estimation/` | 0.66 GB | [Comfy-Org/MoGe](https://huggingface.co/Comfy-Org/MoGe/blob/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors) |
 
 ### Audio (ACE-Step 1.5 music) `acestep`
 

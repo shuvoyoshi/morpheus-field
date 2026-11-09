@@ -10,7 +10,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { agentChat, api, posterUrl, type AgentConfig, type AgentEvent, type AgentStep, type Convo, type HistoryMsg, type Take } from '../api';
 import { inFeed, isAudio, isImage, isModel, settingsOf, toast, upsertTake, useStore } from '../store';
 import { lineage } from '../lineage';
-import { AgentModelSetup, AgentModelSwitcher, Icon, MediaCard, Switch } from '../ui';
+import { AgentModelSetup, AgentModelSwitcher, Icon, MediaCard, Switch, RailHandle, useRail } from '../ui';
 import { linkProps, navigate, useRoute } from '../router';
 import { speak, stopSpeaking } from '../speech';
 import Viewer from '../Viewer';
@@ -370,8 +370,11 @@ export default function AgentPage() {
 
   const title = convos.find((c) => c.id === convoId)?.title ?? (blocks[0] && (blocks[0] as { kind?: string }).kind === 'user' ? (blocks[0] as { text?: string }).text?.slice(0, 60) : null);
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="agent">
+    <div className={`agent ${railOpen ? '' : 'agent-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="agent-side">
         <div className="agent-side-top">
           <button type="button" className="agent-new" onClick={() => navigate('/agent')}>

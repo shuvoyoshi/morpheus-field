@@ -87,7 +87,7 @@ export const BUNDLES: Bundle[] = [
     id: 'ltx25',
     label: 'LTX-2.5 video',
     purpose: 'Video + Loop modes on the LTX-2.5 engine. The recommended starting point: it is the only video engine here whose license permits commercial delivery, and its first/last-frame mode closes seamless loops without a post dissolve.',
-    license: 'LTX-2.x Community License Agreement (Aug 11, 2026). Free for any use, commercial included, if you (and your affiliates) earn under $10M a year; at $10M or more a paid Commercial Use Agreement is required for anything beyond non-commercial use. Acceptable-use restrictions apply. The Gemma 4 based text encoder ships in this repo under the same license.',
+    license: 'LTX-2.x Community License Agreement (Aug 11, 2026). The Gemma 4 based text encoder ships in this repo under the same license.',
     files: [
       { file: LTX25_STOCK.transformer, dir: 'diffusion_models',
         ...HF('Lightricks/LTX-2.5', `diffusion_models/${LTX25_STOCK.transformer}`, 21.5, true) },
@@ -171,7 +171,7 @@ export const BUNDLES: Bundle[] = [
     id: 'flux2',
     label: 'FLUX.2-dev stills',
     purpose: 'Adds FLUX.2 as a second stills model — the photorealism lead where Qwen is the text and layout specialist.',
-    license: 'FLUX Non-Commercial License (Black Forest Labs). The Turbo LoRA is a FLUX.2-dev derivative under the same terms; the Mistral text encoder is redistributed here under it too.',
+    license: 'FLUX.2 dev (Black Forest Labs).',
     optional: true,
     files: [
       { file: 'flux2_dev_fp8mixed.safetensors', dir: 'diffusion_models',
@@ -182,6 +182,71 @@ export const BUNDLES: Bundle[] = [
         ...HF('Comfy-Org/flux2-dev', 'split_files/vae/flux2-vae.safetensors', 0.3) },
       { file: 'Flux2TurboComfyv2.safetensors', dir: 'loras',
         ...HF('Comfy-Org/flux2-dev', 'split_files/loras/Flux2TurboComfyv2.safetensors', 2.8) },
+    ],
+  },
+  {
+    id: 'qwen21',
+    label: 'Qwen-Image 2.1 stills',
+    purpose: 'Adds Qwen-Image 2.1 as a stills model: sharper text, layout and detail than the original Qwen.',
+    license: 'Qwen-Image 2.1 (Apache 2.0) with its Qwen3-VL 8B encoder.',
+    optional: true,
+    files: [
+      { file: 'qwen_image_2.1_int8_convrot.safetensors', dir: 'diffusion_models', gb: 6.8, manual: true },
+      { file: 'qwen3vl_8b_int8_convrot.safetensors', dir: 'text_encoders', gb: 8.7, manual: true },
+      { file: 'qwen_image_2.1_vae_bf16.safetensors', dir: 'vae', gb: 0.6, manual: true },
+      { file: 'p_qwen_image_2.1_8step_v0.1.safetensors', dir: 'loras', gb: 0.3, manual: true },
+    ],
+  },
+  {
+    id: 'krea2',
+    label: 'Krea-2 Turbo stills',
+    purpose: 'Adds Krea-2 Turbo: fast few-step stills (8 steps, CFG 1) with strong style control.',
+    license: 'Krea-2 Turbo (Krea).',
+    optional: true,
+    files: [
+      { file: 'krea2_turbo_fp8_scaled.safetensors', dir: 'diffusion_models', gb: 12.2, manual: true },
+      { file: 'qwen3vl_4b_fp8_scaled.safetensors', dir: 'text_encoders', gb: 4.9, manual: true },
+      { file: 'qwen_image_vae.safetensors', dir: 'vae',
+        ...HF('Comfy-Org/Qwen-Image_ComfyUI', 'split_files/vae/qwen_image_vae.safetensors', 0.3) },
+    ],
+  },
+  {
+    id: 'zimage',
+    label: 'Z-Image Turbo stills',
+    purpose: 'Adds Z-Image Turbo: fast, clean stills (AuraFlow, few steps, CFG 1).',
+    license: 'Z-Image Turbo (Alibaba).',
+    optional: true,
+    files: [
+      { file: 'z_image_turbo_bf16.safetensors', dir: 'diffusion_models', gb: 11.5, manual: true },
+      { file: 'qwen_3_4b.safetensors', dir: 'text_encoders', gb: 7.5, manual: true },
+      { file: 'ae.safetensors', dir: 'vae',
+        ...HF('Comfy-Org/z_image_turbo', 'split_files/vae/ae.safetensors', 0.3) },
+    ],
+  },
+  {
+    id: 'klein',
+    label: 'FLUX.2 Klein stills',
+    purpose: 'Adds FLUX.2 Klein 9B: a compact, fast FLUX.2 that also takes reference pictures (identity and wardrobe carried over).',
+    license: 'FLUX.2 Klein 9B (Black Forest Labs) with its Qwen3-VL 8B encoder.',
+    optional: true,
+    files: [
+      { file: 'flux-2-klein-base-9b-fp8.safetensors', dir: 'diffusion_models', gb: 8.9, manual: true },
+      { file: 'qwen3vl_8b_int8_convrot.safetensors', dir: 'text_encoders', gb: 8.7, manual: true },
+      { file: 'flux2-vae.safetensors', dir: 'vae',
+        ...HF('Comfy-Org/flux2-dev', 'split_files/vae/flux2-vae.safetensors', 0.3) },
+    ],
+  },
+  {
+    id: 'flux3',
+    label: 'FLUX.3 stills',
+    purpose: 'Adds FLUX.3 (a Flux2-architecture model): the newest FLUX.',
+    license: 'FLUX.3 (Black Forest Labs) with its Qwen3-VL 4B encoder.',
+    optional: true,
+    files: [
+      { file: 'flux3-image-klein-base-int8-convrot.safetensors', dir: 'diffusion_models', gb: 5.4, manual: true },
+      { file: 'qwen3vl_4b_int8_convrot.safetensors', dir: 'text_encoders', gb: 4.5, manual: true },
+      { file: 'flux2-vae.safetensors', dir: 'vae',
+        ...HF('Comfy-Org/flux2-dev', 'split_files/vae/flux2-vae.safetensors', 0.3) },
     ],
   },
   {
@@ -202,7 +267,7 @@ export const BUNDLES: Bundle[] = [
     id: 'upres-ultrasharp',
     label: 'Upscale: Sharpen with 4x-UltraSharp',
     purpose: 'The 4x-UltraSharp option in Sharpen mode: crisper edges than RealESRGAN on clean renders. Needs the upres bundle.',
-    license: '4x-UltraSharp: CC BY-NC-SA 4.0, Kim2091.',
+    license: '4x-UltraSharp (Kim2091).',
     optional: true,
     files: [
       { file: '4x-UltraSharp.pth', dir: 'upscale_models', ...HF('Kim2091/UltraSharp', '4x-UltraSharp.pth', 0.07) },
@@ -367,7 +432,7 @@ export const BUNDLES: Bundle[] = [
     id: 'sam3',
     label: 'SAM 3.1 (find and track objects)',
     purpose: 'Finds a subject or an object from a word or a click and follows it through a clip (SAM3_VideoTrack). Keeps the clip cut out to the named subject (steady and tracked modes) and draws the mask for Object swap. Core ComfyUI nodes (0.38 or newer).',
-    license: 'Meta SAM License: royalty-free, commercial use allowed; excludes military / ITAR uses and reverse engineering; publications must acknowledge SAM.',
+    license: 'Meta SAM License.',
     optional: true,
     files: [
       { file: 'sam3.1_multiplex_fp16.safetensors', dir: 'checkpoints',
@@ -424,8 +489,8 @@ export const BUNDLES: Bundle[] = [
   },
   {
     id: 'trellis2',
-    label: 'Object (image to 3D, TRELLIS.2)',
-    purpose: 'The Object app and Make 3D on any still: TRELLIS.2 builds a textured mesh (GLB, PBR base color, metallic, roughness; High adds a baked normal map and AO) from one picture, through ComfyUI 0.38 built-in nodes. BiRefNet cuts the subject out first. bf16 weights, about 14 GB.',
+    label: 'Model (image to 3D, TRELLIS.2)',
+    purpose: 'The Model app and Make 3D on any still: TRELLIS.2 builds a textured mesh (GLB, PBR base color, metallic, roughness; High adds a baked normal map and AO) from one picture, through ComfyUI 0.38 built-in nodes. BiRefNet cuts the subject out first. bf16 weights, about 14 GB.',
     license: 'TRELLIS.2 (microsoft/TRELLIS.2-4B, repackaged by Comfy-Org/TRELLIS.2): MIT, the DiT and both VAEs. BiRefNet (ZhengPeng7/BiRefNet, repackaged by Comfy-Org/BiRefNet): MIT. The DINOv3 ViT-L image encoder (facebook/dinov3, repackaged in Comfy-Org/TRELLIS.2) is under the Meta DINOv3 License: royalty-free, commercial use allowed, with acceptable-use exclusions (military and ITAR uses, reverse engineering); the Comfy repo tags it MIT, but the upstream weights carry the DINOv3 License (and Meta gates its own repo behind a manual approval).',
     optional: true,
     files: [
@@ -434,6 +499,23 @@ export const BUNDLES: Bundle[] = [
       { file: 'trellis_2_texture_vae_bf16.safetensors', dir: 'vae', ...HF('Comfy-Org/TRELLIS.2', 'vae/trellis_2_texture_vae_bf16.safetensors', 0.95) },
       { file: 'dino_v3_vit_l.safetensors', dir: 'clip_vision', ...HF('Comfy-Org/TRELLIS.2', 'clip_vision/dino_v3_vit_l.safetensors', 1.21) },
       { file: 'birefnet.safetensors', dir: 'background_removal', ...HF('Comfy-Org/BiRefNet', 'background_removal/birefnet.safetensors', 0.44) },
+    ],
+  },
+  {
+    id: 'pixal3d',
+    label: 'Model (image to 3D, Pixal3D)',
+    purpose: 'The Model app on Pixal3D, the second engine: TencentARC Pixal3D (Comfy-Org repack) conditions the same TRELLIS.2 stage pipeline on a DINOv3-NAF encoder and a per-image camera FoV estimated by MoGe, then bakes PBR textures onto the mesh the same way. int8 convrot weights, about 12 GB with the shared VAEs, BiRefNet cutout and both MoGe ViT-L estimators.',
+    license: 'Pixal3D (TencentARC/Pixal3D, repackaged by Comfy-Org/Pixal3D): MIT. MoGe (microsoft/moge, Ruicheng/moge-vitl + moge-2-vitl, repackaged by Comfy-Org/MoGe): MIT. The shared TRELLIS.2 shape/texture VAEs and BiRefNet are MIT; the DINOv3 ViT-L NAF encoder carries the Meta DINOv3 License, as in the trellis2 bundle (royalty-free, commercial use allowed, with acceptable-use exclusions).',
+    optional: true,
+    files: [
+      { file: 'pixal3d_int8_convrot.safetensors', dir: 'diffusion_models', ...HF('Comfy-Org/Pixal3D', 'diffusion_models/pixal3d_int8_convrot.safetensors', 5.58) },
+      { file: 'pixal3d_multiview_int8_convrot.safetensors', dir: 'diffusion_models', ...HF('Comfy-Org/Pixal3D', 'diffusion_models/pixal3d_multiview_int8_convrot.safetensors', 5.58) },
+      { file: 'dino_v3_L_naf_fp32.safetensors', dir: 'clip_vision', ...HF('Comfy-Org/Pixal3D', 'clip_vision/dino_v3_L_naf_fp32.safetensors', 1.22) },
+      { file: 'trellis_2_shape_vae_bf16.safetensors', dir: 'vae', ...HF('Comfy-Org/Pixal3D', 'vae/trellis_2_shape_vae_bf16.safetensors', 1.10) },
+      { file: 'trellis_2_texture_vae_bf16.safetensors', dir: 'vae', ...HF('Comfy-Org/Pixal3D', 'vae/trellis_2_texture_vae_bf16.safetensors', 0.95) },
+      { file: 'birefnet.safetensors', dir: 'background_removal', ...HF('Comfy-Org/BiRefNet', 'background_removal/birefnet.safetensors', 0.44) },
+      { file: 'moge_1_vitl_fp16.safetensors', dir: 'geometry_estimation', ...HF('Comfy-Org/MoGe', 'geometry_estimation/moge_1_vitl_fp16.safetensors', 0.63) },
+      { file: 'moge_2_vitl_normal_fp16.safetensors', dir: 'geometry_estimation', ...HF('Comfy-Org/MoGe', 'geometry_estimation/moge_2_vitl_normal_fp16.safetensors', 0.66) },
     ],
   },
   {
@@ -547,7 +629,10 @@ export function bundlesFor(req: {
     if (req.mode === 'dream') return ['ltx25', 'dream'];
     return req.model === 'ultrasharp' ? ['upres', 'upres-ultrasharp'] : ['upres'];
   }
-  if (req.kind === 'still') return [req.model === 'flux2' ? 'flux2' : 'qwen'];
+  if (req.kind === 'still') {
+    const stillBundle: Record<string, string> = { qwen: 'qwen', flux2: 'flux2', qwen21: 'qwen21', krea2: 'krea2', zimage: 'zimage', klein: 'klein', flux3: 'flux3' };
+    return [stillBundle[req.model ?? 'qwen'] ?? 'qwen'];
+  }
   if (req.kind === 'edit') return ['edit'];
   if (req.kind === 'upres') return ['upres'];
   if (req.kind === 'mirror') return ['ltx25', 'mirror'];
@@ -566,7 +651,8 @@ export function bundlesFor(req: {
   // Stage: the shot needs the Layout-to-Render LoRA; a missing look frame is made first.
   if (req.kind === 'stage-look') return req.engine === 'edit' ? ['edit'] : ['stage-look'];
   if (req.kind === 'stage') return ['ltx25', 'stage', ...(req.lookImage ? [] : bundlesFor({ kind: 'stage-look', engine: req.lookEngine }))];
-  if (req.kind === 'object') return ['trellis2'];
+  // Model app: the engine picks the bundle; both share the TRELLIS.2 stage VAEs.
+  if (req.kind === 'object') return req.model === 'pixal3d' ? ['pixal3d'] : ['trellis2'];
   // Audio app: one bundle per mode.
   if (req.kind === 'music') return ['acestep'];
   if (req.kind === 'speech') return ['qwen3-tts'];

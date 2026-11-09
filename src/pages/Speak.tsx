@@ -12,7 +12,7 @@ import { usePageDrop } from '../drop';
 import { setParams, useRoute } from '../router';
 import { SourceSlot, fileKind, loadFile, useTakeParam, type Source } from '../SourcePick';
 import { inFeed, settingsOf, toast, useStore } from '../store';
-import { Icon, MediaCard, Stepper, TierChip, fmtSeconds, useEstimate, useTierChoice } from '../ui';
+import { Icon, MediaCard, Stepper, TierChip, fmtSeconds, useEstimate, useTierChoice, RailHandle, useRail } from '../ui';
 import Viewer, { recreate, remove } from '../Viewer';
 import { MentionBox, useMentioned } from '../Mention';
 
@@ -107,8 +107,11 @@ export default function SpeakPage() {
     if (n) setViewing(n.id);
   };
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '360px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <div className="tabs">
           <button type="button" className={speak ? 'on' : ''} onClick={() => setParams({ mode: null })}>Speak</button>

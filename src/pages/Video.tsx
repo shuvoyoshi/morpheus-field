@@ -8,7 +8,7 @@ import { availableH3Turbo, secondsToFrames } from '../presets';
 import { setParams, useRoute } from '../router';
 import { isAudio, isImage, isModel, takeHandoff, toast, useStore, type Ref, inFeed } from '../store';
 import { useDropZone, usePageDrop } from '../drop';
-import { ChipMenu, Clip, Icon, MediaCard, Spill, Stepper, Switch, TierChip, fmtSeconds, presetClip, useEstimate, useTierChoice } from '../ui';
+import { ChipMenu, Clip, Icon, MediaCard, ModelPicker, RailHandle, Spill, Stepper, Switch, TierChip, fmtSeconds, presetClip, useEstimate, useRail, useTierChoice } from '../ui';
 import Viewer, { animate, recreate, remove } from '../Viewer';
 import { MentionBox, useMentioned } from '../Mention';
 import { LoraChips, useLoraPicks } from '../Loras';
@@ -70,6 +70,7 @@ export default function VideoPage() {
   const castOn = castNamed.length > 0 && model.id === 'ltx25' && !start && !end;
   const sheetOn = castOn && castMode === 'sheet';
   const shown = sheetOn ? (({ width, height }) => ({ w: width, h: height }))(sheetSize(size.w, size.h)) : size;
+  const [railOpen, toggleRail] = useRail();
   const est = useEstimate({ kind: 'video', model: model.id, w: shown.w, h: shown.h, seconds: sheetOn ? Math.max(5, seconds) : seconds, ...(model.id === 'h3' ? { turbo: turbo || 'none' } : {}) });
   const takes = useStore((s) => s.takes.filter((t) => inFeed(t) && !isImage(t) && !isModel(t) && !isAudio(t)));
   const compiled = compilePrompt([prompt, preset.text]);
@@ -145,7 +146,8 @@ export default function VideoPage() {
   };
 
   return (
-    <div className="rail-layout">
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <Spill src={presetClip(preset.id)} video key={preset.id} />
         <div className="tabs">
@@ -206,7 +208,7 @@ export default function VideoPage() {
 
         {castOn && <CastShot members={castNamed} mode={castMode} onMode={setCastMode} size={size} />}
 
-        <ModelRow value={model.id} onChange={(id) => setParams({ model: id === 'ltx25' ? null : id })} />
+        <ModelPicker models={VIDEO_MODELS} value={model.id} onChange={(id) => setParams({ model: id === 'ltx25' ? null : id })} />
         {model.warn && <div className="label" style={{ color: 'var(--accent)', textTransform: 'none', letterSpacing: 0, fontSize: 11.5 }}>{model.warn}</div>}
 
         <div className="chip-row">
@@ -291,30 +293,6 @@ function CastShot({ members, mode, onMode, size }: { members: CastMember[]; mode
         </>
       ) : (
         <div className="label" style={{ textTransform: 'none', letterSpacing: 0 }}>A still of your cast in this scene is composed first, then the video starts from it.</div>
-      )}
-    </div>
-  );
-}
-
-function ModelRow({ value, onChange }: { value: string; onChange: (id: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const m = VIDEO_MODELS.find((x) => x.id === value)!;
-  return (
-    <div style={{ position: 'relative' }}>
-      <button type="button" className="rail-row" onClick={() => setOpen(!open)}>
-        <span className="label">Model</span>
-        <span className="val">{m.label}<Icon name={open ? 'down' : 'chev'} size={14} /></span>
-      </button>
-      {open && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-          {VIDEO_MODELS.map((x) => (
-            <button key={x.id} type="button" className={`pop-item ${x.id === value ? 'on' : ''}`} style={{ background: 'var(--panel-2)', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
-              onClick={() => { onChange(x.id); setOpen(false); }}>
-              <span style={{ fontWeight: 600 }}>{x.label} <small className="dim">· {x.vendor}</small></span>
-              <small>{x.note}</small>
-            </button>
-          ))}
-        </div>
       )}
     </div>
   );

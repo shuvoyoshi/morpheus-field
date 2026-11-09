@@ -10,7 +10,7 @@ import { api, inputUrl, mediaUrl, uploadFile, type Take } from '../api';
 import { CUTOUT_BACKGROUNDS, CUTOUT_COLORS, CUTOUT_MAX_SECONDS, CUTOUT_MODES, cutoutSize, type CutoutBackground, type CutoutMode } from '../catalog';
 import { setParams, useRoute } from '../router';
 import { inFeed, isImage, settingsOf, takeHandoff, toast, useStore } from '../store';
-import { Icon, MediaCard, Switch, fmtSeconds, useEstimate } from '../ui';
+import { Icon, MediaCard, Switch, fmtSeconds, useEstimate, RailHandle, useRail } from '../ui';
 import Viewer, { recreate, remove } from '../Viewer';
 import { usePageDrop } from '../drop';
 import { DropWell, probeClip } from './Mirror';
@@ -129,8 +129,11 @@ export default function CutoutPage() {
 
   const viewTake = takes.find((t) => t.id === view);
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '360px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <div className="display" style={{ fontSize: 26 }}>Remove background</div>
         <div className="dim" style={{ fontSize: 12.5, marginTop: -4 }}>Cut the subject out of a still or a clip. Keep it transparent, or put it somewhere new.</div>

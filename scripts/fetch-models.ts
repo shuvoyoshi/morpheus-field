@@ -225,8 +225,8 @@ async function main(): Promise<void> {
     console.error('Re-run the same command to resume — completed files are skipped.\n');
     process.exit(1);
   }
-  if (configured.length) {
-    console.log(c.bad(`\nDownloads done, but ${configured.length} configured file(s) are still missing (listed before the downloads).\n`));
+  if (notDownloadable.length) {
+    console.log(c.bad(`\nDownloads done, but ${notDownloadable.length} configured file(s) are still missing (listed before the downloads).\n`));
     process.exit(1);
   }
   console.log(c.ok(`\nDone. Restart ComfyUI so it rescans its model folders, then re-check in Morpheus.\n`));

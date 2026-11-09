@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { api, inputUrl, mediaUrl, uploadFile, type Take } from '../api';
 import { inFeed, settingsOf, toast, useStore } from '../store';
-import { Icon, MediaCard, Stepper, Switch, TierChip, fmtSeconds, useEstimate, useTierChoice } from '../ui';
+import { Icon, MediaCard, Stepper, Switch, TierChip, fmtSeconds, useEstimate, useTierChoice, RailHandle, useRail } from '../ui';
 import Viewer, { recreate, remove } from '../Viewer';
 import { Compare, DropWell, probeClip } from './Mirror';
 import { RESHOOT_ANGLES as SHOTS } from '../catalog';
@@ -96,8 +96,11 @@ export default function ReshootPage() {
 
   const compareTake = takes.find((t) => t.id === compare);
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '360px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <div className="display" style={{ fontSize: 26 }}>Reshoot</div>
         <div className="rail-section">

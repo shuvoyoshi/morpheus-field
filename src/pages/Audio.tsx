@@ -13,7 +13,7 @@ import { api } from '../api';
 import { ACE_KEYS, ACE_LANGUAGES, ACE_TIMESIGS, TTS_LANGUAGES } from '../catalog';
 import { setParams, useRoute } from '../router';
 import { isAudio, inFeed, toast, useStore } from '../store';
-import { ChipMenu, Clip, Icon, MediaCard, Spill, Stepper, fmtSeconds, presetClip, useEstimate } from '../ui';
+import { ChipMenu, Clip, Icon, MediaCard, Spill, Stepper, fmtSeconds, presetClip, useEstimate, RailHandle, useRail } from '../ui';
 import Viewer, { recreate, remove } from '../Viewer';
 
 const SEC_MIN = 5, SEC_MAX = 300;
@@ -85,8 +85,11 @@ export default function AudioPage() {
     if (n) setViewing(n.id);
   };
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '372px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <Spill src={presetClip('golden')} video />
         <div className="display" style={{ fontSize: 26 }}>Audio</div>

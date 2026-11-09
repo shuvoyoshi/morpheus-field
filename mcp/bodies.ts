@@ -25,7 +25,7 @@ import {
   SHARPEN_MODELS, SOUND_PROMPT, SPEAK_PROMPT, SPEED_RAMPS, TRANSITION_STYLES, UPSCALE_MODES, VIDEO_MODELS, clampEra, directorDirection, isRamp, pickGenre,
   type RampId,
   SWAP_MAX_SECONDS, mirrorSize, restyleById, restyleInstruction, restyleLook, restylePrompt, swapPrompt, type CutoutBackground, type CutoutMode,
-  compilePrompt, editAppById, editVariants, presetById, sizeFor, videoFrame, type AspectId, type EditMode, type RedrawColor, type RedrawModel, type SharpenModel, type UpscaleMode,
+  compilePrompt, editAppById, editVariants, imageModelById, IMAGE_MODELS, presetById, sizeFor, videoFrame, type AspectId, type EditMode, type ImageModelId, type RedrawColor, type RedrawModel, type SharpenModel, type UpscaleMode,
 } from '../src/catalog.ts';
 import { secondsToFrames } from '../src/presets.ts';
 import { EFFECTS, effectById, effectPrompt, effectSize } from '../src/effects.ts';
@@ -100,21 +100,21 @@ export function videoBody(o: VideoOpts): Body {
 }
 
 export interface ImageOpts {
-  model: 'qwen' | 'flux2';
+  model: ImageModelId;
   prompt: string;
   aspect: AspectId;
   quality: 'draft' | 'quality';
   res: ImageRes;
   count: number;
   loras?: LoraPick[];
-  /** FLUX.2 only: reference picture tokens (the Refs chip). */
+  /** Models whose `refs` flag is set (FLUX.2 dev, Klein, FLUX.3): reference picture tokens (the Refs chip). */
   refImages?: string[];
 }
 
 /** Image.tsx go(). */
 export function imageBody(o: ImageOpts): Body {
   if (!o.prompt.trim()) throw new Error('Image needs a prompt.');
-  if (o.refImages?.length && o.model !== 'flux2') throw new Error('Reference pictures need model flux2.');
+  if (o.refImages?.length && !imageModelById(o.model).refs) throw new Error(`Reference pictures need a model that takes them: ${IMAGE_MODELS.filter((m) => m.refs).map((m) => m.label).join(', ')}.`);
   if ((o.refImages?.length ?? 0) > 6) throw new Error('Up to 6 reference pictures.');
   const tier = IMAGE_RES.find((r) => r.id === o.res);
   if (!tier) throw new Error(`Unknown image resolution "${o.res}". Options: ${IMAGE_RES.map((r) => r.id).join(', ')}`);
@@ -631,7 +631,7 @@ export function fixSeamBody(strategy: SeamStrategy = 'auto'): Body {
   return { strategy };
 }
 
-export interface ObjectOpts { source: SourceRef; quality: 'draft' | 'quality'; cutout: boolean; count: number }
+export interface ObjectOpts { source: SourceRef; quality: 'draft' | 'quality'; cutout: boolean; count: number; model?: 'trellis' | 'pixal3d' }
 
 /** Object.tsx go(): a still (by take id, or an upload token) to a textured GLB. */
 export function objectBody(o: ObjectOpts): Body {
@@ -639,6 +639,7 @@ export function objectBody(o: ObjectOpts): Body {
   if (source.kind !== 'image') throw new Error('Make 3D needs a still.');
   return {
     kind: 'object', app: 'object', quality, removeBackground: cutout, count,
+    ...(o.model ? { model: o.model } : {}),
     ...(source.takeId ? { sourceTake: source.takeId } : { image: source.token }),
     shotName: `object_${(source.prompt || source.name || 'still').slice(0, 30)}`,
     userPrompt: source.prompt ? `3D: ${source.prompt}` : `3D from ${source.name}`,

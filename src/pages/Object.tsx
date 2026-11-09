@@ -1,17 +1,17 @@
 /**
- * Object: any still becomes a textured 3D model (TRELLIS.2 on the local
- * engine). The rail takes the still and the settings; the canvas shows the
- * selected model on a turntable you can grab, next to every other take.
+ * Model: any still becomes a textured 3D model (TRELLIS.2 or Pixal3D on the
+ * local engine). The rail takes the still and the settings; the canvas shows
+ * the selected model on a turntable you can grab, next to every other take.
  * Each result is an ordinary take whose file is a GLB, so the Library, the
  * Viewer and the Stage all read it from /api/media/<take>.
  */
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { api, downloadUrl, mediaUrl, posterUrl, subjectUrl, type Take } from '../api';
-import { OBJECT_DETAIL } from '../catalog';
+import { MODEL_MODELS, OBJECT_DETAIL, type ModelEngine } from '../catalog';
 import { setParams, useRoute } from '../router';
 import { SourceSlot, loadFile, useTakeParam, type Source } from '../SourcePick';
 import { inFeed, isModel, settingsOf, toast, useStore } from '../store';
-import { Icon, MediaCard, Spill, Stepper, Switch, fmtSeconds, presetClip, useEstimate } from '../ui';
+import { Icon, MediaCard, Spill, Stepper, Switch, fmtSeconds, presetClip, useEstimate, RailHandle, useRail } from '../ui';
 import Viewer, { recreate, remove } from '../Viewer';
 import { usePageDrop } from '../drop';
 import type { ModelLook } from '../ModelView';
@@ -21,6 +21,7 @@ const ModelView = lazy(() => import('../ModelView'));
 export default function ObjectPage() {
   const { params } = useRoute();
   const [source, setSource] = useState<Source | null>(null);
+  const [model, setModel] = useState<ModelEngine>('trellis');
   const [quality, setQuality] = useState<'draft' | 'quality'>('draft');
   const [cutout, setCutout] = useState(true);
   // Background removal you can see before the 3D run: a cutout take of the still.
@@ -45,7 +46,7 @@ export default function ObjectPage() {
   });
 
   const takes = useStore((s) => s.takes.filter((t) => inFeed(t) && isModel(t)));
-  const est = useEstimate({ kind: 'object', quality });
+  const est = useEstimate({ kind: 'object', model, quality });
   const shown = takes.find((t) => t.id === selected) ?? takes.find((t) => t.status === 'done');
   useEffect(() => { setLook('lit'); }, [shown?.id]);
 
@@ -71,7 +72,7 @@ export default function ObjectPage() {
     setBusy('Queuing...');
     try {
       const r = await api.generate({
-        kind: 'object', app: 'object', quality, count,
+        kind: 'object', app: 'object', model, quality, count,
         // With the cutout showing, mesh exactly that PNG; its alpha is the subject.
         ...(usingCut ? { sourceTake: cut!.takeId, removeBackground: false }
           : { removeBackground: cutout, ...(source.takeId ? { sourceTake: source.takeId } : { image: source.token }) }),
@@ -88,15 +89,26 @@ export default function ObjectPage() {
   }
 
   const q = OBJECT_DETAIL.find((x) => x.id === quality)!;
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '372px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <Spill src={presetClip('turntable')} video />
-        <div className="display" style={{ fontSize: 26 }}>Object</div>
-        <div className="dim" style={{ fontSize: 12.5, marginTop: -4 }}>One still becomes a textured 3D model you can turn, download as GLB and drop into a scene. TRELLIS.2, on your GPU.</div>
+        <div className="display" style={{ fontSize: 26 }}>Model</div>
+        <div className="dim" style={{ fontSize: 12.5, marginTop: -4 }}>One still becomes a textured 3D model you can turn, download as GLB and drop into a scene. On your GPU.</div>
 
         <SourceSlot label="Still" value={source} onChange={setSource} accept={['image']}
           title="Add a still of the thing" sub="One subject, whole in frame, on a plain background works best." />
+
+        <div className="rail-section">
+          <div className="label">Engine</div>
+          <div className="seg">
+            {MODEL_MODELS.map((x) => <button key={x.id} type="button" className={model === x.id ? 'on' : ''} onClick={() => setModel(x.id)}>{x.label}</button>)}
+          </div>
+          <div className="dim" style={{ fontSize: 12 }}>{MODEL_MODELS.find((x) => x.id === model)!.note} {MODEL_MODELS.find((x) => x.id === model)!.vendor} · {MODEL_MODELS.find((x) => x.id === model)!.license}.</div>
+        </div>
 
         <div className="rail-section">
           <div className="label">Detail</div>
@@ -146,7 +158,7 @@ export default function ObjectPage() {
 
         <button type="button" className="generate" style={{ marginTop: 'auto' }} disabled={!!busy || !source} onClick={() => void go()}>
           <span>{busy ?? (count > 1 ? `Make 3D · ${count}` : 'Make 3D')}</span>
-          <span className="cost">{est ? fmtSeconds(est * count) : 'TRELLIS.2'}</span>
+          <span className="cost">{est ? fmtSeconds(est * count) : MODEL_MODELS.find((x) => x.id === model)!.label}</span>
         </button>
       </aside>
 

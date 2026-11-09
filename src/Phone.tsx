@@ -31,28 +31,42 @@ export function PhoneDrop({ onClip }: { onClip: (token: string, name: string) =>
   const [now, setNow] = useState(Date.now());
   const sessionId = phase.kind === 'open' ? phase.session.id : null;
   const onClipRef = { current: onClip };
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
-  // Live state for our session only; other windows' sessions are ignored.
+  // The session outlives the page: the user scans the code and then films on
+  // the phone, often without the desktop in front of them — leaving the page
+  // must NOT close the link (that is what used to cut the phone mid-upload).
+  // It closes on its TTL, on Cancel, or when a newer code replaces it.
+  // Follow it at all times — including while at 'off', so a link opened in
+  // another window (or before a page reload) is adopted here.
   useEffect(() => {
-    if (!sessionId) return;
-    return onPhoneEvent((e: PhoneEvent) => {
-      if (e.id !== sessionId) return;
+    let dead = false;
+    const off = onPhoneEvent((e: PhoneEvent) => {
+      const p = phaseRef.current;
+      if (p.kind === 'open' && e.id !== p.session.id) return;
       if (e.state === 'opened' || e.state === 'waiting' || e.state === 'receiving') {
-        setPhase((p) => (p.kind === 'open' ? { ...p, step: e.state as 'waiting' | 'opened' | 'receiving', bytes: e.bytes ?? 0 } : p));
+        setPhase((q) => (q.kind === 'open' ? { ...q, step: e.state as 'waiting' | 'opened' | 'receiving', bytes: e.bytes ?? 0 } : q));
       } else if (e.state === 'received' && e.result) {
         setPhase({ kind: 'off' });
         void onClipRef.current(e.result.token, e.result.name);
-      } else if (e.state === 'closed' && e.reason !== 'received' && e.reason !== 'cancelled') {
-        setPhase({ kind: 'ended', text: ENDED[e.reason ?? ''] ?? 'The phone link closed.' });
+      } else if (e.state === 'closed') {
+        if (e.reason === 'received' || e.reason === 'cancelled') setPhase({ kind: 'off' });
+        else setPhase({ kind: 'ended', text: ENDED[e.reason ?? ''] ?? 'The phone link closed.' });
       }
     });
-  }, [sessionId]);
+    // Adopt a link that is already open (another window, or a page reload).
+    void api.phoneStatus().then(({ session }) => {
+      if (!dead && session) setPhase((q) => (q.kind === 'off' ? { kind: 'open', session, step: 'waiting', bytes: 0 } : q));
+    }).catch(() => {});
+    return () => { dead = true; off(); };
+  }, []);
 
-  // Countdown, and close the LAN listener when this page goes away.
+  // Countdown only; the server's TTL owns the lifetime.
   useEffect(() => {
     if (!sessionId) return;
     const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => { clearInterval(t); void api.phoneStop(sessionId).catch(() => {}); };
+    return () => clearInterval(t);
   }, [sessionId]);
 
   async function start() {
@@ -90,9 +104,16 @@ export function PhoneDrop({ onClip }: { onClip: (token: string, name: string) =>
   const left = Math.max(0, session.expiresAt - now);
   const clock = `${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')}`;
   const net = session.network;
+  const isPublic = !!session.public && !!session.pin;
   return (
     <div className="phone-panel">
       <div className="phone-qr"><Qr text={session.url} label="QR code for the phone clip link" /></div>
+      {isPublic && session.pin && (
+        <div className="phone-pin" title="Enter this code on your phone to unlock the link">
+          <span className="dim" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}>PIN</span>
+          <span className="mono" style={{ fontSize: 26, fontWeight: 700, letterSpacing: '.3em' }}>{session.pin}</span>
+        </div>
+      )}
       <div className="phone-status">
         <span className={`dot ${step === 'waiting' ? 'busy' : 'up'}`} />
         <span>
@@ -102,7 +123,11 @@ export function PhoneDrop({ onClip }: { onClip: (token: string, name: string) =>
         </span>
         <span className="mono dim" style={{ marginLeft: 'auto' }}>{clock}</span>
       </div>
-      <div className="dim" style={{ fontSize: 12 }}>Same Wi-Fi as this computer. The code works once, for 10 minutes.</div>
+      <div className="dim" style={{ fontSize: 12 }}>
+        {isPublic
+          ? 'Works on mobile data (over the tunnel). Enter the PIN on your phone. The code works once, for 15 minutes — it stays open if you leave this page.'
+          : 'Same Wi-Fi as this computer. The code works once, for 15 minutes — it stays open if you leave this page.'}
+      </div>
 
       {net.warning ? (
         <div className="phone-warn">

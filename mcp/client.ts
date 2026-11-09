@@ -181,10 +181,18 @@ export interface Asset {
  * - a local file path is read and POSTed to /api/upload (uploadFile in src/api.ts)
  * - `take:<id>` re-uploads a finished take's media (takeAsInput in src/api.ts)
  */
+/** A take reference: the documented `take:<id>`, or a bare id — local LLMs often drop the
+ *  prefix, and a bare number is never a valid file path here (files carry an extension).
+ *  Returns the take id, or undefined when the reference is a file path. */
+export function takeIdOf(ref: string): number | undefined {
+  const m = /^(?:take:)?(\d+)$/i.exec(ref.trim().replace(/^["']|["']$/g, ''));
+  return m ? Number(m[1]) : undefined;
+}
+
 export async function resolveInput(ref: string, want: 'image' | 'video' | 'audio'): Promise<Asset> {
-  const m = /^take:(\d+)$/i.exec(ref.trim());
-  if (m) {
-    const t = await getTake(Number(m[1]));
+  const takeId = takeIdOf(ref);
+  if (takeId !== undefined) {
+    const t = await getTake(takeId);
     if (t.status !== 'done') throw new ApiError(`take ${t.id} is ${t.status}, not done`);
     const isStill = t.kind === 'still';
     if (want === 'image' && !isStill) throw new ApiError(`take ${t.id} is ${t.kind === 'object' ? 'a 3D model' : 'a video'}; this input needs an image`);

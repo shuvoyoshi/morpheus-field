@@ -28,13 +28,12 @@ import Player from './Player';
 import { PairChip } from './Phone';
 
 const SECTIONS = [
-  { to: '/image', label: 'Image', icon: 'image' },
-  { to: '/edit', label: 'Edit', icon: 'wand' },
-  { to: '/video', label: 'Video', icon: 'video' },
-  { to: '/audio', label: 'Audio', icon: 'audio' },
-  { to: '/agent', label: 'Agent', icon: 'nodes' },
-  { to: '/library', label: 'Library', icon: 'film' },
   { to: '/apps', label: 'Apps', icon: 'grid' },
+  { to: '/agent', label: 'Agent', icon: 'nodes' },
+  { to: '/audio', label: 'Audio', icon: 'audio' },
+  { to: '/image', label: 'Image', icon: 'image' },
+  { to: '/video', label: 'Video', icon: 'video' },
+  { to: '/object', label: 'Model', icon: 'cube' },
 ];
 
 export default function App() {
@@ -100,6 +99,8 @@ export default function App() {
               </a>
             ))}
           </>}
+          <span className="nav-sep" />
+          <a className={`nav-link ${isActive('/library') ? 'active' : ''}`} {...linkProps('/library')}><Icon name="film" size={14} />Library</a>
           <a className={`nav-link nav-setup ${isActive('/setup') ? 'active' : ''}`} {...linkProps('/setup')}><Icon name="cpu" size={14} />Setup</a>
         </nav>
         <div className="topbar-right">

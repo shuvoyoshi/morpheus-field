@@ -20,7 +20,7 @@
  * proxy in server/lan.ts.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -32,8 +32,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const PAGE = readFileSync(join(here, 'phone.html'), 'utf8');
 // The page is served from this listener's own port, so a /logo/... URL would 404
 // (in dev the UI is on the Vite port); the CSP allows data: for images, so inline
-// the mark instead. If the file is ever missing the page hides the empty slot.
-const LOGO_PATH = join(here, '..', 'public', 'logo', 'muilogo.png');
+// the mark instead. The full mark is 1.2 MB — too heavy for a phone on Wi-Fi — so
+// inline the 96px variant when it exists (it is displayed at 20px). If the file
+// is ever missing the page hides the empty slot.
+const LOGO_DIR = join(here, '..', 'public', 'logo');
+const LOGO_PATH = existsSync(join(LOGO_DIR, 'muilogo-96.png'))
+  ? join(LOGO_DIR, 'muilogo-96.png')
+  : join(LOGO_DIR, 'muilogo.png');
 const LOGO = existsSync(LOGO_PATH) ? `data:image/png;base64,${readFileSync(LOGO_PATH).toString('base64')}` : '';
 
 export interface PhoneClip { data: Buffer; mime: string; ext: 'mp4' | 'mov' | 'webm'; name: string }
@@ -53,12 +58,24 @@ export interface PhoneSessionInfo {
   port: number;
   maxBytes: number;
   network: PhoneNetwork;
+  /** The auth PIN for public/mobile-data mode, or null for LAN (token-only) mode. */
+  pin: string | null;
+  /** True when the link is exposed over the internet (a tunnel), not just the LAN. */
+  public: boolean;
 }
 
 export interface PhoneOptions {
   port: number;
   /** Bind/advertise this address instead of auto-detecting one. */
   host?: string;
+  /**
+   * Public base URL of a tunnel (e.g. https://xyz.trycloudflare.com) for
+   * mobile-data access. When set, the link is reachable from the internet, the
+   * listener binds loopback (the tunnel connects locally), and a PIN is required.
+   */
+  publicUrl?: string;
+  /** The auth PIN for public mode. If publicUrl is set and this is omitted, one is generated. */
+  pin?: string;
   ttlMs?: number;
   maxBytes?: number;
   /** Store the clip. Its return value is passed through to the 'received' state. Throwing keeps the session open. */
@@ -66,7 +83,8 @@ export interface PhoneOptions {
   onState: (id: string, s: PhoneState) => void;
 }
 
-const DEFAULT_TTL = 10 * 60_000;
+/** Fifteen minutes: long enough to find a clip on the phone and send it, short enough to not linger. */
+const DEFAULT_TTL = 15 * 60_000;
 const DEFAULT_MAX = 300 * 1024 * 1024;
 const MAX_BAD_REQUESTS = 30;
 
@@ -91,16 +109,29 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
   if (current) closePhoneSession('replaced');
   const ttl = opts.ttlMs ?? DEFAULT_TTL;
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX;
-  const network = await detectNetwork(opts.host, opts.port);
+  // Public/mobile-data mode: the link is exposed through a tunnel, so the phone
+  // can reach it off the LAN. We bind loopback (only the local tunnel can get
+  // in) and require a PIN, because the URL is now on the open internet.
+  const isPublic = !!opts.publicUrl;
+  const pin = isPublic ? (opts.pin ?? makePin()) : null;
+  const network = isPublic
+    ? { wsl: 'none' as const, bindHost: opts.host ?? '127.0.0.1', urlHost: '', warning: null, commands: [] }
+    : await detectNetwork(opts.host, opts.port);
   const token = randomBytes(32);
   const id = randomBytes(8).toString('hex');
   const tokenStr = token.toString('base64url');
+  const url = isPublic
+    ? `${opts.publicUrl!.replace(/\/+$/, '')}/p/${tokenStr}`
+    : `http://${fmtHost(network.urlHost)}:${opts.port}/p/${tokenStr}`;
 
   const server = createServer((req, res) => handle(req, res));
   // Slowloris and parked sockets: nothing about this needs more than a few clients.
-  server.maxConnections = 8;
+  server.maxConnections = 16;
   server.headersTimeout = 15_000;
-  server.requestTimeout = ttl;
+  // A 300 MB clip over slow Wi-Fi can take well over the session TTL; never
+  // abort an upload just because the link expired — only the TTL itself and an
+  // explicit cancel end the session.
+  server.requestTimeout = Math.max(ttl, 30 * 60_000);
   server.keepAliveTimeout = 5_000;
 
   await new Promise<void>((resolve, reject) => {
@@ -118,10 +149,10 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
 
   const expiresAt = Date.now() + ttl;
   const s: Session = {
-    info: { id, url: `http://${fmtHost(network.urlHost)}:${opts.port}/p/${tokenStr}`, expiresAt, port: opts.port, maxBytes, network },
+    info: { id, url, expiresAt, port: opts.port, maxBytes, network, pin, public: isPublic },
     token,
     server,
-    timer: setTimeout(() => closePhoneSession('expired'), ttl),
+    timer: setTimeout(() => expire(s), ttl),
     uploading: false,
     bad: 0,
     opts,
@@ -134,7 +165,7 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
   function handle(req: IncomingMessage, res: ServerResponse) {
     // Requests that arrive on a socket accepted just before close still land here.
     if (current !== s) return send(res, 410, { error: 'This link is closed.' });
-    const m = /^\/p\/([A-Za-z0-9_-]{1,64})(\/upload)?$/.exec((req.url || '').split('?')[0]);
+    const m = /^\/p\/([A-Za-z0-9_-]{1,64})(\/(upload|check))?$/i.exec((req.url || '').split('?')[0]);
     if (!m || !tokenOk(m[1])) {
       if (++s.bad >= MAX_BAD_REQUESTS) setImmediate(() => closePhoneSession('abuse'));
       req.resume();
@@ -145,7 +176,8 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
       const html = PAGE
         .replace('__LOGO__', LOGO)
         .replace('__MAX_BYTES__', String(maxBytes))
-        .replace('__EXPIRES_AT__', String(expiresAt));
+        .replace('__EXPIRES_AT__', String(expiresAt))
+        .replace('__PIN_REQUIRED__', String(!!pin));
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
@@ -157,7 +189,22 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
       });
       return res.end(html);
     }
-    if (m[2] && req.method === 'POST') return void upload(req, res);
+    if (m[3] === 'check' && req.method === 'POST') {
+      // Let the phone confirm the PIN before it films, so a wrong code is caught
+      // up front rather than after the clip is already recorded.
+      req.resume();
+      if (pin && !pinOk(String(req.headers['x-pin'] || ''), pin)) {
+        return send(res, 401, { error: 'Wrong PIN. Check the code on your computer.' });
+      }
+      return send(res, 200, { ok: true });
+    }
+    if (m[3] === 'upload' && req.method === 'POST') {
+      if (pin && !pinOk(String(req.headers['x-pin'] || ''), pin)) {
+        req.resume();
+        return send(res, 401, { error: 'Wrong PIN. Check the code on your computer.' });
+      }
+      return void upload(req, res);
+    }
     req.resume();
     return send(res, 405, { error: 'Method not allowed' });
   }
@@ -165,6 +212,16 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
   function tokenOk(candidate: string): boolean {
     const b = Buffer.from(candidate, 'base64url');
     return b.length === token.length && timingSafeEqual(b, token);
+  }
+
+  /** Expiry that never yanks the socket out from under a clip still on its way. */
+  function expire(s: Session): void {
+    if (current !== s) return;
+    if (s.uploading) {
+      s.timer = setTimeout(() => expire(s), 30_000);
+      return;
+    }
+    closePhoneSession('expired');
   }
 
   async function upload(req: IncomingMessage, res: ServerResponse) {
@@ -214,8 +271,10 @@ export async function openPhoneSession(opts: PhoneOptions): Promise<PhoneSession
       const result = await opts.onClip({ data, mime: realMime, ext, name: rawName || `phone.${ext}` });
       send(res, 200, { ok: true });
       opts.onState(id, { state: 'received', result });
-      // Spent: the token cannot be used again. Give the response a moment to flush.
-      setTimeout(() => { if (current === s) closePhoneSession('received'); }, 250);
+      // Spent: the token cannot be used again. Give the 200 time to actually
+      // reach the phone (a lossy Wi-Fi link can lose it to the socket teardown
+      // otherwise), then take the listener down.
+      setTimeout(() => { if (current === s) closePhoneSession('received'); }, 1500);
     } catch (e) {
       s.uploading = false;
       opts.onState(id, { state: 'waiting' });
@@ -233,6 +292,19 @@ export function closePhoneSession(reason: 'received' | 'expired' | 'cancelled' |
   s.server.close();
   s.server.closeAllConnections();
   s.opts.onState(s.info.id, { state: 'closed', reason });
+}
+
+/** A 6-digit code, shown on the desktop and entered on the phone (public mode). */
+function makePin(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+/** Constant-time PIN compare. Length is fixed (6 digits), so the guard is only a
+ *  safety net against a malformed header. */
+function pinOk(provided: string, pin: string): boolean {
+  const p = provided.trim();
+  if (p.length !== pin.length) return false;
+  return timingSafeEqual(Buffer.from(p), Buffer.from(pin));
 }
 
 function send(res: ServerResponse, code: number, body: unknown) {

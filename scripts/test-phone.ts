@@ -68,7 +68,7 @@ ok(clips.length === 1 && clips[0].data.equals(mp4), 'onClip got the exact bytes'
 ok(clips[0]?.ext === 'mp4' && clips[0]?.mime === 'video/mp4', 'container sniffed as mp4');
 ok(clips[0]?.name === 'take one.mp4', 'filename header decoded and sanitized');
 ok(states.some((x) => x.state === 'received'), "state 'received' emitted");
-await sleep(500);
+await sleep(2000); // the close is deferred so the 200 reaches the phone first
 ok(states.at(-1)?.state === 'closed' && (states.at(-1) as any).reason === 'received', 'session closes itself after the upload');
 ok(await refused(s.url), 'listener is gone: the page no longer answers');
 ok(await refused(`${s.url}/upload`), 'token is spent: replaying the upload cannot connect');
@@ -97,6 +97,49 @@ ok(await refused(second.url), 'listener is gone after too many guesses');
 s = await open();
 closePhoneSession('cancelled');
 ok(await refused(s.url), 'cancel closes the listener');
+
+// ---- 6. public / mobile-data mode with PIN auth ----
+// The listener binds loopback, so we exercise it on 127.0.0.1 (the tunnel would
+// connect there); the public URL is only asserted, not fetched.
+const tunnel = 'https://tunnel.example.com';
+const pin = '123456';
+clips = []; states = [];
+s = await openPhoneSession({
+  port: port + 1, publicUrl: tunnel, pin,
+  onClip: async (c) => { clips.push(c); return { token: 'asset:test' }; },
+  onState: (_id, st) => { states.push(st); },
+});
+const pubToken = s.url.split('/p/')[1];
+const pubLocal = `http://127.0.0.1:${port + 1}/p/${pubToken}`;
+ok(s.public === true && s.pin === pin, 'public session is flagged and carries the pin');
+ok(s.network.bindHost === '127.0.0.1', 'public session binds loopback (only the tunnel can reach it)');
+ok(s.url === `${tunnel}/p/${pubToken}`, 'public URL uses the tunnel host, not the LAN IP');
+
+let pr = await fetch(pubLocal);
+const phtml = await pr.text();
+ok(pr.status === 200 && phtml.includes("PIN_REQUIRED = 'true'"), 'public page tells the phone a PIN is required');
+
+ok((await post(pubLocal, mp4, 'video/mp4', { 'X-Pin': '000000' })).status === 401, 'upload with a wrong PIN -> 401');
+ok((await post(pubLocal, mp4, 'video/mp4')).status === 401, 'upload with no PIN -> 401');
+ok((await fetch(`${pubLocal}/check`, { method: 'POST', headers: { 'X-Pin': '000000' } })).status === 401, 'check with a wrong PIN -> 401');
+ok((await fetch(`${pubLocal}/check`, { method: 'POST', headers: { 'X-Pin': pin } })).status === 200, 'check with the right PIN -> 200');
+ok(clips.length === 0, 'nothing reached onClip from rejected (unpinned) uploads');
+
+pr = await post(pubLocal, mp4, 'video/mp4', { 'X-Pin': pin });
+ok(pr.status === 200, `upload with the right PIN -> 200 (${mp4.length} bytes)`);
+ok(clips.length === 1 && clips[0].data.equals(mp4), 'onClip got the exact bytes (pinned upload)');
+await sleep(2000);
+ok(states.at(-1)?.state === 'closed' && (states.at(-1) as any).reason === 'received', 'pinned session closes itself after the upload');
+ok(await refused(pubLocal), 'listener is gone after the pinned upload');
+
+// ---- 7. LAN mode still requires no PIN (token-only) ----
+clips = []; states = [];
+s = await open();
+ok(s.public === false && s.pin === null, 'LAN session is not public and has no pin');
+let lr = await fetch(s.url);
+const lhtml = await lr.text();
+ok(lhtml.includes("PIN_REQUIRED = 'false'"), 'LAN page does not require a PIN');
+ok((await post(s.url, mp4)).status === 200, 'LAN upload works without a PIN');
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

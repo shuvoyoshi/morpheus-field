@@ -27,23 +27,35 @@ export const VIDEO_MODELS: VideoModel[] = [
   {
     id: 'h3', label: 'MiniMax H3', vendor: 'MiniMax', note: 'Text, image, first + last frame, or references — all on the all-in-one H3 checkpoint. Strong direction-following and dialogue. Turbo (8-step) or max (20-step). Opt-in.',
     start: true, end: true, audio: true, durations: [5, 8, 10], license: 'H3 community license',
-    warn: 'H3 license excludes the US, EU, UK and South Korea.',
   },
 ];
 
+export type ImageModelId = 'qwen' | 'flux2' | 'qwen21' | 'krea2' | 'zimage' | 'klein' | 'flux3';
+
 export interface ImageModel {
-  id: 'qwen' | 'flux2';
+  id: ImageModelId;
   label: string;
   vendor: string;
   note: string;
   license: string;
   warn?: string;
+  /** Accepts reference pictures in Image create (i2i). */
+  refs?: boolean;
+  /** The LoRA family its own LoRAs must match (server/loras.ts). */
+  loraFamily: 'qwen' | 'flux2';
 }
 
 export const IMAGE_MODELS: ImageModel[] = [
-  { id: 'qwen', label: 'Qwen-Image', vendor: 'Alibaba', note: 'Text, layout and posters. Apache 2.0.', license: 'Apache 2.0' },
-  { id: 'flux2', label: 'FLUX.2 dev', vendor: 'Black Forest Labs', note: 'Photoreal lead.', license: 'FLUX.2 dev non-commercial', warn: 'Non-commercial license.' },
+  { id: 'qwen', label: 'Qwen-Image', vendor: 'Alibaba', note: 'Text, layout and posters. Apache 2.0.', license: 'Apache 2.0', loraFamily: 'qwen' },
+  { id: 'flux2', label: 'FLUX.2 dev', vendor: 'Black Forest Labs', note: 'Photoreal lead. References keep faces, clothes and objects in a new photograph.', license: 'FLUX.2 dev', refs: true, loraFamily: 'flux2' },
+  { id: 'qwen21', label: 'Qwen-Image 2.1', vendor: 'Alibaba', note: 'Newer Qwen: sharper text, layout and detail.', license: 'Apache 2.0', loraFamily: 'qwen' },
+  { id: 'krea2', label: 'Krea-2 Turbo', vendor: 'Krea', note: 'Fast turbo stills with strong style control.', license: 'Krea-2 Turbo', loraFamily: 'flux2' },
+  { id: 'zimage', label: 'Z-Image Turbo', vendor: 'Alibaba', note: 'Fast turbo stills, clean and crisp.', license: 'Z-Image Turbo', loraFamily: 'qwen' },
+  { id: 'klein', label: 'FLUX.2 Klein 9B', vendor: 'Black Forest Labs', note: 'Compact FLUX.2: fast and photographic. References carry over.', license: 'FLUX.2 Klein 9B', refs: true, loraFamily: 'flux2' },
+  { id: 'flux3', label: 'FLUX.3', vendor: 'Black Forest Labs', note: 'Newest FLUX. References carry over into an edit.', license: 'FLUX.3', refs: true, loraFamily: 'flux2' },
 ];
+
+export const imageModelById = (id: string): ImageModel => IMAGE_MODELS.find((m) => m.id === id) ?? IMAGE_MODELS[0];
 
 export const ASPECTS = [
   { id: '16:9', w: 16, h: 9 },
@@ -159,11 +171,18 @@ export function compilePrompt(parts: (string | undefined | false)[]): string {
     .join(' ');
 }
 
-/** Object app detail levels; the numbers mirror server/graphs/trellis.ts OBJECT_QUALITY. */
+/** Model app detail levels; the numbers mirror server/graphs/trellis.ts OBJECT_QUALITY. */
 export const OBJECT_DETAIL = [
   { id: 'draft', label: 'Draft', note: 'Up to 150k faces, 2K textures. About 2 minutes on a 5090. Check the shape here.' },
   { id: 'quality', label: 'High', note: 'Up to 400k faces, 4K textures plus baked normal and AO maps. About 5 minutes on a 5090.' },
 ] as const;
+
+/** The Model app's engines; the weights they need live in the trellis2 / pixal3d bundles (server/models.ts). */
+export const MODEL_MODELS = [
+  { id: 'trellis', label: 'TRELLIS.2', vendor: 'Microsoft', note: 'The steady 4B pipeline: reliable shapes, clean PBR textures.', license: 'MIT (DINOv3 encoder under the Meta DINOv3 License)' },
+  { id: 'pixal3d', label: 'Pixal3D', vendor: 'Tencent', note: 'DINOv3-NAF conditioning with a per-image camera FoV from MoGe. Detail-hungry on textured subjects.', license: 'MIT' },
+] as const;
+export type ModelEngine = (typeof MODEL_MODELS)[number]['id'];
 
 /** The app gallery. `route` is where Try opens; `soon` apps are listed but locked. */
 export interface AppDef {
@@ -211,7 +230,7 @@ export const APPS: AppDef[] = [
   { id: 'transition', name: 'Transitions', blurb: 'Bridge two takes or stills with a generated move such as a morph or a whip pan.', route: '/extend?mode=transition', icon: 'loop', hue: 300, cat: 'finish', cover: 'whip-pan', clip: '/apps/transition.mp4' },
   { id: 'upscale', name: 'Upscale', blurb: 'Sharpen, redraw or dream any take or file at a higher resolution.', route: '/upscale', icon: 'up', hue: 50, cat: 'finish', cover: 'rack-focus', clip: '/apps/upscale.mp4' },
   { id: 'speak', name: 'Speak', blurb: 'Turn a face and a voice track into a talking shot that follows the audio.', route: '/speak', icon: 'person', hue: 12, cat: 'transform', cover: 'handheld' },
-  { id: 'object', name: 'Object', blurb: 'Turn one still into a textured 3D model you can spin, download or place in Stage.', route: '/object', icon: 'cube', hue: 30, cat: 'create', cover: 'turntable', clip: '/apps/object.mp4' },
+  { id: 'object', name: 'Model', blurb: 'Turn one still into a textured 3D model you can spin, download or place in Stage.', route: '/object', icon: 'cube', hue: 30, cat: 'create', cover: 'turntable', clip: '/apps/object.mp4' },
   { id: 'sound', name: 'Add sound', blurb: 'Generate a soundtrack for a silent take and keep the picture as it is.', route: '/speak?mode=sound', icon: 'audio', hue: 190, cat: 'create', cover: 'storm' },
   { id: 'audio', name: 'Audio', blurb: 'Write lyrics and tags and get a full song from ACE-Step 1.5, or have Qwen3-TTS say anything in a voice you describe.', route: '/audio', icon: 'audio', hue: 175, cat: 'create', cover: 'golden' },
   { id: 'agent', name: 'Agent', blurb: 'Chat with a model that plans and drives the whole studio, chaining renders until your ask is done.', route: '/agent', icon: 'nodes', hue: 335, cat: 'direct', cover: 'dolly-zoom' },
@@ -524,7 +543,7 @@ export const UPSCALE_MODES: { id: UpscaleMode; label: string; note: string; imag
 
 export const SHARPEN_MODELS = [
   { id: 'esrgan', label: 'RealESRGAN x4plus', file: 'RealESRGAN_x4plus.pth', note: 'BSD-3. Safe for paid work.' },
-  { id: 'ultrasharp', label: '4x-UltraSharp', file: '4x-UltraSharp.pth', note: 'Crisper edges. Non-commercial license.', warn: '4x-UltraSharp is licensed CC BY-NC-SA 4.0: non-commercial use only.' },
+  { id: 'ultrasharp', label: '4x-UltraSharp', file: '4x-UltraSharp.pth', note: 'Crisper edges.' },
 ] as const;
 export type SharpenModel = (typeof SHARPEN_MODELS)[number]['id'];
 

@@ -1,7 +1,7 @@
 /** Shared UI kit: icons, chips with menus, media cards, GPU chip, logo. */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import qrcode from 'qrcode-generator';
-import { api, posterUrl, mediaUrl, turntableUrl, type AgentConfig, type EngineGpu, type EngineMode, type LlmModel, type Take } from './api';
+import { api, posterUrl, mediaUrl, turntableUrl, type AgentConfig, type EngineGpu, type EngineMode, type LlmModel, type Status, type Take } from './api';
 import { isActive, isAudio, isImage, isModel, refreshStatus, settingsOf, toast, useStore } from './store';
 import { APP_MAX_TIER, RENDER_TIERS, appTier, tierCapNote, tierDef, tiersUpTo, type RenderTier, type TierApp } from './renderTier';
 import { takeDragProps } from './drop';
@@ -151,6 +151,55 @@ export function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boo
   return <button type="button" role="switch" aria-checked={on} aria-label={label} className={`switch ${on ? 'on' : ''}`} onClick={() => onChange(!on)} />;
 }
 
+// ---------- rail drawer (the collapsible sidebar, shared by every app + the agent) ----------
+const RAIL_KEY = 'morpheus.rail-open';
+/** One shared open/closed preference, so the drawer state is the same on every app. */
+export function useRail(): [boolean, () => void] {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(RAIL_KEY) !== '0'; } catch { return true; } });
+  const toggle = useCallback(() => {
+    setOpen((o) => { const n = !o; try { localStorage.setItem(RAIL_KEY, n ? '1' : '0'); } catch { /* storage unavailable */ } return n; });
+  }, []);
+  return [open, toggle];
+}
+
+/** The tab on the page's left edge that opens or closes the sidebar. */
+export function RailHandle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" className="rail-handle" onClick={onToggle} aria-label={open ? 'Collapse the sidebar' : 'Expand the sidebar'}>
+      <Icon name="chev" size={14} className={open ? 'flip' : ''} />
+    </button>
+  );
+}
+
+// ---------- model picker (the rail's model dropdown, the video-app style) ----------
+export function ModelPicker({ models, value, onChange, showRefs }: {
+  models: { id: string; label: string; vendor: string; note: string; refs?: boolean }[];
+  value: string; onChange: (id: string) => void; showRefs?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const m = models.find((x) => x.id === value) ?? models[0];
+  return (
+    <div style={{ position: 'relative' }}>
+      <button type="button" className="rail-row" onClick={() => setOpen(!open)}>
+        <span className="label">Model</span>
+        <span className="val">{m.label}<Icon name={open ? 'down' : 'chev'} size={14} /></span>
+      </button>
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+          {models.map((x) => (
+            <button key={x.id} type="button" className={`pop-item ${x.id === value ? 'on' : ''}`}
+              style={{ background: 'var(--panel-2)', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
+              onClick={() => { onChange(x.id); setOpen(false); }}>
+              <span style={{ fontWeight: 600 }}>{x.label} <small className="dim">· {x.vendor}</small></span>
+              <small>{x.note}{showRefs && x.refs ? ' · references' : ''}</small>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Toast() {
   const t = useStore((s) => s.toast);
   if (!t) return null;
@@ -261,8 +310,8 @@ export function VideoDecodePicker() {
 
 // ---------- engine control ----------
 const ENGINE_GPUS: { id: EngineGpu; label: string; compact: string; note: string }[] = [
-  { id: '4090', label: '4090', compact: '4090', note: 'RTX 4090 only (CUDA 0)' },
-  { id: '5090', label: '5090', compact: '5090', note: 'RTX 5090 only (CUDA 1)' },
+  { id: '4090', label: '4090', compact: '4090', note: 'RTX 4090 only' },
+  { id: '5090', label: '5090', compact: '5090', note: 'RTX 5090 only' },
   { id: 'both', label: '4090+5090', compact: 'both', note: 'Both cards, 5090 primary' },
 ];
 
@@ -320,10 +369,10 @@ export function EngineControl({ compact }: { compact?: boolean }) {
     }
   }
 
-  const cuda = gpu === '4090' ? '0' : gpu === '5090' ? '1' : '1,0';
+  const card = gpu === '4090' ? 'RTX 4090 only' : gpu === '5090' ? 'RTX 5090 only' : 'both cards, 5090 primary';
   const whatRuns = wan
     ? (wanOk ? 'WAN · the listen bat (--listen)' : 'WAN · falls back to COMFY_LAUNCH (no --listen yet — set COMFY_LAUNCH_WAN)')
-    : `LAN · COMFY_LAUNCH · CUDA_VISIBLE_DEVICES=${cuda}`;
+    : `LAN · COMFY_LAUNCH · ${card}`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
@@ -540,6 +589,70 @@ export function AgentModelSwitcher() {
   );
 }
 
+// ---------- system vitals (the engine card's stat grid) ----------
+type SysColor = 'g' | 'b' | 'o' | 'n';
+
+function SysTile({ tag, color, value, pct }: { tag: string; color: SysColor; value: string; pct: number | null }) {
+  const w = pct === null ? 0 : Math.max(0, Math.min(100, pct));
+  return (
+    <span className={`systile ${color}`}>
+      <span className="tag">{tag}</span>
+      <span className="sysbar"><i style={{ width: `${w}%` }} /></span>
+      <span className="val">{value}</span>
+    </span>
+  );
+}
+
+/** The stat grid: CPU · RAM · HDD, then one row per card (GPU · VRAM · Temp). */
+export function SysStats({ sys }: { sys: Status['sys'] }) {
+  if (!sys) return null;
+  const vramPct = (g: { vramUsedGb: number; vramTotalGb: number }) =>
+    g.vramTotalGb ? (g.vramUsedGb / g.vramTotalGb) * 100 : 0;
+  return (
+    <div className="sysgrid">
+      <SysTile tag="CPU" color="g" value={sys.cpu === null ? '—' : `${sys.cpu}%`} pct={sys.cpu} />
+      <SysTile tag="RAM" color="g" value={`${sys.ram}%`} pct={sys.ram} />
+      {sys.disk !== null
+        ? <SysTile tag="HDD" color="n" value={`${sys.disk}%`} pct={sys.disk} />
+        : <span className="sysgrid-blank" aria-hidden />}
+      {sys.gpus.map((g, i) => (
+        <Fragment key={g.name + i}>
+          <SysTile tag={g.name.replace(/^NVIDIA\s+(GeForce\s+)?/, '') || `GPU ${i}`} color="b" value={`${g.usage}%`} pct={g.usage} />
+          <SysTile tag="VRAM" color="b" value={`${Math.round(vramPct(g))}%`} pct={vramPct(g)} />
+          <SysTile tag="Temp" color="o" value={`${Math.round(g.tempC)}°`} pct={(g.tempC / 90) * 100} />
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** The next VRAM auto-clear as an MM:SS box + an orange ring that drains over the interval. */
+export function VramCountdown({ vc }: { vc?: Status['vramClear'] }) {
+  const active = !!vc?.on && vc.nextAt !== null;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const t = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(t);
+  }, [active]);
+  if (!active) return null;
+  const total = Math.max(1, vc!.intervalMs / 1000);
+  const left = Math.max(0, Math.min(total, (vc!.nextAt! - now) / 1000));
+  const mm = String(Math.floor(left / 60)).padStart(2, '0');
+  const ss = String(Math.floor(left % 60)).padStart(2, '0');
+  const R = 7.5;
+  const C = 2 * Math.PI * R;
+  return (
+    <span className="vram-count" title={`Next idle-VRAM free in ${mm}:${ss}`}>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
+        <circle cx="8" cy="8" r={R} className="bg" />
+        <circle cx="8" cy="8" r={R} className="fg" strokeDasharray={C} strokeDashoffset={C * (1 - left / total)} transform="rotate(-90 8 8)" />
+      </svg>
+      <span className="mmss">{mm}:{ss}</span>
+    </span>
+  );
+}
+
 // ---------- GPU chip (replaces a credits counter) ----------
 export function GpuChip() {
   const st = useStore((s) => s.status);
@@ -553,34 +666,54 @@ export function GpuChip() {
   const pct = used !== undefined && st?.vramTotalGb ? Math.min(100, (used / st.vramTotalGb) * 100) : 0;
   const state = !st ? '' : !st.up ? 'down' : active ? 'busy' : 'up';
   const gpu = st?.target === 'cloud' ? 'Comfy Cloud' : st?.gpu?.replace(/^NVIDIA\s+(GeForce\s+)?/, '') ?? 'GPU';
+  const sys = st?.sys;
   return (
     <div className="pop-wrap" ref={ref}>
-      <button type="button" className="gpu-chip" onClick={() => setOpen(!open)}>
+      <button type="button" className="gpu-chip" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className={`dot ${state}`} />
         <span className="mono">{st?.up ? gpu : 'Engine off'}</span>
         {st?.up && st.target !== 'cloud' && <span className="vram" title="VRAM in use"><i style={{ width: `${pct}%` }} /></span>}
         {active > 0 && <span className="badge">{active} in queue</span>}
       </button>
       {open && (
-        <div className="popover down" style={{ width: 300, padding: 12 }}>
-          <div className="label" style={{ marginBottom: 8 }}>Engine</div>
-          <dl className="kv">
-            <dt>Target</dt><dd>{st?.target === 'cloud' ? 'Comfy Cloud' : 'Local ComfyUI'}</dd>
-            <dt>ComfyUI</dt><dd>{st?.up ? `v${st.version ?? '?'}` : 'not answering'}</dd>
-            <dt>Comfy API v2</dt><dd>{st?.api ? 'up' : 'down'}</dd>
-            {used !== undefined && <><dt>VRAM</dt><dd>{used.toFixed(1)} / {st!.vramTotalGb!.toFixed(1)} GB</dd></>}
-            <dt>Jobs</dt><dd>{active ? `${active} active` : 'idle'}</dd>
-            {onEngine > active && <><dt className="dim">Engine queue</dt><dd className="dim">{onEngine} on the engine</dd></>}
-          </dl>
-          <div style={{ marginTop: 12 }}>
-            <EngineControl compact />
-          </div>
-          <div className="label" style={{ margin: '12px 0 6px' }}>Render size</div>
-          <RenderTierPicker compact />
-          <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-            {st?.up && <button type="button" className="btn sm" onClick={() => void api.free().then(() => toast('VRAM freed'))}>Free VRAM</button>}
-            {active > 0 && <button type="button" className="btn sm danger" onClick={() => void api.clearQueue()}>Stop all</button>}
-          </div>
+        <div className="popover down syscard" style={{ width: 300, padding: 14 }}>
+            <section className="syscard-sec">
+              <div className="label">Engine</div>
+              <dl className="kv">
+                <dt>Target</dt><dd>{st?.target === 'cloud' ? 'Comfy Cloud' : 'Local ComfyUI'}</dd>
+                <dt>ComfyUI</dt><dd>{st?.up ? `v${st.version ?? '?'}` : 'not answering'}</dd>
+                <dt>Comfy API v2</dt><dd>{st?.api ? 'up' : 'down'}</dd>
+                {used !== undefined && <><dt>VRAM</dt><dd>{used.toFixed(1)} / {st!.vramTotalGb!.toFixed(1)} GB</dd></>}
+                <dt>Jobs</dt><dd>{active ? `${active} active` : 'idle'}</dd>
+                {onEngine > active && <><dt className="dim">Engine queue</dt><dd className="dim">{onEngine} on the engine</dd></>}
+              </dl>
+            </section>
+            {sys && (
+              <section className="syscard-sec">
+                <div className="label">System</div>
+                <SysStats sys={sys} />
+              </section>
+            )}
+            <section className="syscard-sec">
+              <div className="label">Engine card</div>
+              <EngineControl compact />
+            </section>
+            <section className="syscard-sec">
+              <div className="label">Render size</div>
+              <RenderTierPicker compact />
+            </section>
+            <section className="syscard-sec syscard-actions">
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {st?.up && <button type="button" className="btn sm" onClick={() => void api.free().then(() => toast('VRAM freed')).catch((e) => toast(e instanceof Error ? e.message : 'could not free VRAM', true))}>Free VRAM</button>}
+                {active > 0 && <button type="button" className="btn sm danger" onClick={() => void api.clearQueue().then(() => toast('Queue cleared')).catch((e) => toast(e instanceof Error ? e.message : 'could not clear the queue', true))}>Stop all</button>}
+              </div>
+              <span className="chip" style={{ background: 'transparent', padding: '4px 0', justifyContent: 'flex-end', gap: 8 }}
+                title="Every minute, while the queue is empty, free any model still loaded in VRAM so the GPU never runs out for the next render. Off = models stay loaded.">
+                <span className="dim">Free idle models</span>
+                <VramCountdown vc={st?.vramClear} />
+                <Switch on={!!st?.vramAutoClear} onChange={(v) => void api.setVramClear(v).then(() => refreshStatus()).catch((e) => toast(e instanceof Error ? e.message : 'could not save', true))} label="auto-clear idle VRAM" />
+              </span>
+            </section>
         </div>
       )}
     </div>

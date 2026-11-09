@@ -1,13 +1,13 @@
 /**
- * Image to 3D: TRELLIS.2 (microsoft/TRELLIS.2-4B, Comfy-Org repack) through
- * ComfyUI's built-in nodes (comfy_extras/nodes_trellis2.py and
- * nodes_mesh_postprocess.py, ComfyUI 0.38.2). The wiring follows ComfyUI's own
- * "3d_pixal3d_trellis2_image_to_model" template with its switch set to
- * TRELLIS.2, minus the Pixal3D and MoGe branch:
+ * Image to 3D, two engines on the same stage pipeline, through ComfyUI's
+ * built-in nodes (comfy_extras/nodes_trellis2.py and nodes_mesh_postprocess.py).
+ * The wiring follows ComfyUI's own "3d_pixal3d_trellis2_image_to_model"
+ * template, whose TRELLIS.2/Pixal3D switch we set once per render:
  *
  *   still -> subject mask (BiRefNet, or the picture's own alpha)
  *         -> ImageCropToMask (square, subject centered, black around it)
- *         -> DINOv3 -> Trellis2Conditioning
+ *   TRELLIS.2 branch: DINOv3 -> Trellis2Conditioning
+ *   Pixal3D branch:    DINOv3-NAF -> MoGe (per-image FoV) -> Pixal3DConditioning
  *   1. structure: empty structure latent -> KSampler (shift 5, CFG 7.5 with the
  *      template's CFG override + rescale) -> 32^3 occupancy voxels
  *   2. shape:     Trellis2ShapeStage -> KSampler at 512, Trellis2UpsampleStage
@@ -17,6 +17,10 @@
  *   post: remesh (UDF) -> decimate -> smooth normals -> UV unwrap -> bake the
  *         texture voxels into an atlas (back-projected from the dense mesh)
  *         -> (High) bake a normal map and AO from the dense mesh -> GLB.
+ *
+ * Both branches share stages 1-3 and the post pipeline; only the UNet, the
+ * encoder and the conditioning differ (model_detection picks the Pixal3D
+ * projection head out of the weights, so the samplers are agnostic).
  *
  * Besides the GLB the graph renders a turntable in the engine: the finished
  * mesh, turned a step per frame and ray-cast by RenderMesh, into a short mp4 the
@@ -36,6 +40,14 @@ export const TRELLIS_SHAPE_VAE = 'trellis_2_shape_vae_bf16.safetensors';
 export const TRELLIS_TEXTURE_VAE = 'trellis_2_texture_vae_bf16.safetensors';
 export const TRELLIS_ENCODER = 'dino_v3_vit_l.safetensors';
 export const BG_REMOVAL_MODEL = 'birefnet.safetensors';
+
+/** The Pixal3D branch: Tencent Pixal3D UNet, the DINOv3-NAF encoder, and MoGe for the per-image FoV. */
+export const PIXAL3D_MODEL = 'pixal3d_int8_convrot.safetensors';
+export const PIXAL3D_ENCODER = 'dino_v3_L_naf_fp32.safetensors';
+export const MOGE_MODEL = 'moge_2_vitl_normal_fp16.safetensors';
+
+/** Which engine builds the mesh: TRELLIS.2 (the default) or Pixal3D. */
+export type ObjectModel = 'trellis' | 'pixal3d';
 
 export type ObjectQuality = 'draft' | 'quality';
 
@@ -61,6 +73,8 @@ export interface TrellisParams {
   image: string;
   seed: number;
   quality: ObjectQuality;
+  /** The engine: 'trellis' (TRELLIS.2, default) or 'pixal3d'. */
+  model?: ObjectModel;
   /** true: BiRefNet finds the subject. false: use the picture's own transparency. */
   removeBackground: boolean;
   /** Frames in the turntable; 0 skips it. */
@@ -71,12 +85,15 @@ export interface TrellisParams {
 export function buildTrellisGraph(p: TrellisParams): Graph {
   const q = OBJECT_QUALITY[p.quality];
   const seed = Math.max(0, Math.floor(p.seed)) % 2 ** 32;
+  const model: ObjectModel = p.model === 'pixal3d' ? 'pixal3d' : 'trellis';
+  const unet = model === 'pixal3d' ? PIXAL3D_MODEL : TRELLIS_MODEL;
+  const encoder = model === 'pixal3d' ? PIXAL3D_ENCODER : TRELLIS_ENCODER;
   const g: Graph = {
     img: { class_type: 'LoadImage', inputs: { image: p.image } },
-    unet: { class_type: 'UNETLoader', inputs: { unet_name: TRELLIS_MODEL, weight_dtype: 'default' } },
+    unet: { class_type: 'UNETLoader', inputs: { unet_name: unet, weight_dtype: 'default' } },
     svae: { class_type: 'VAELoader', inputs: { vae_name: TRELLIS_SHAPE_VAE } },
     tvae: { class_type: 'VAELoader', inputs: { vae_name: TRELLIS_TEXTURE_VAE } },
-    dino: { class_type: 'CLIPVisionLoader', inputs: { clip_name: TRELLIS_ENCODER } },
+    dino: { class_type: 'CLIPVisionLoader', inputs: { clip_name: encoder } },
   };
 
   // ---- the subject ----
@@ -95,7 +112,21 @@ export function buildTrellisGraph(p: TrellisParams): Graph {
     inputs: { images: ['img', 0], masks: mask, width: 1024, height: 1024, pad_factor: 1.1, grow_mask: 0, background: '#000000' },
   };
   g.subject = { class_type: 'PreviewImage', inputs: { images: ['crop', 0] } };
-  g.cond = { class_type: 'Trellis2Conditioning', inputs: { clip_vision_model: ['dino', 0], image: ['crop', 0] } };
+  if (model === 'pixal3d') {
+    // Pixal3D conditions on the DINOv3-NAF encoder and a per-image camera FoV:
+    // MoGe estimates the source camera on the cropped subject, and
+    // MoGeGeometryToFOV turns its intrinsics into horizontal degrees (the
+    // template's rig: the unit cube spans 1/1.1 of the frame).
+    g.moge = { class_type: 'LoadMoGeModel', inputs: { model_name: MOGE_MODEL } };
+    g.geo = {
+      class_type: 'MoGeInference',
+      inputs: { moge_model: ['moge', 0], image: ['crop', 0], resolution_level: 9, fov_x_degrees: 0, batch_size: 4, force_projection: true, apply_mask: true, refine_steps: 3 },
+    };
+    g.fov = { class_type: 'MoGeGeometryToFOV', inputs: { moge_geometry: ['geo', 0], axis: 'horizontal', unit: 'degrees' } };
+    g.cond = { class_type: 'Pixal3DConditioning', inputs: { clip_vision_model: ['dino', 0], image: ['crop', 0], camera_angle_x: ['fov', 0] } };
+  } else {
+    g.cond = { class_type: 'Trellis2Conditioning', inputs: { clip_vision_model: ['dino', 0], image: ['crop', 0] } };
+  }
 
   // ---- 1. sparse structure ----
   // The template's CFG override and rescale reproduce the reference pipeline's guidance schedule.

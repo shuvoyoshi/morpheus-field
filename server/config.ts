@@ -63,8 +63,15 @@ export const config = {
    * on loopback. PHONE_HOST overrides the auto-detected LAN address; under WSL2
    * NAT it is the Windows LAN address to put in the QR code.
    */
-  phonePort: num(process.env.OPENFIELD_PHONE_PORT, 3162),
-  phoneHost: (process.env.OPENFIELD_PHONE_HOST || '').trim() || undefined,
+   phonePort: num(process.env.OPENFIELD_PHONE_PORT, 3162),
+   phoneHost: (process.env.OPENFIELD_PHONE_HOST || '').trim() || undefined,
+  /**
+   * Mobile-data access: the public base URL of a tunnel (e.g.
+   * https://xyz.trycloudflare.com) that reaches this machine's phone port. When
+   * set, the phone link is exposed over the internet so a phone on cellular can
+   * use it; the listener then binds loopback and requires a PIN. Unset = LAN only.
+   */
+   phonePublicHost: (process.env.OPENFIELD_PHONE_PUBLIC_HOST || '').trim() || undefined,
 
   /**
    * "Open on your phone" (server/phoneApp.ts): a token-gated LAN reverse proxy

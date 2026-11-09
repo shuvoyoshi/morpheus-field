@@ -10,7 +10,7 @@ import { usePageDrop } from '../drop';
 import { setParams, useRoute } from '../router';
 import { SourceSlot, loadFile, useTakeParam, type Source } from '../SourcePick';
 import { inFeed, settingsOf, toast, useStore } from '../store';
-import { ChipMenu, Icon, MediaCard, Stepper, Switch, TierChip, fmtSeconds, useEstimate, useTierChoice } from '../ui';
+import { ChipMenu, Icon, MediaCard, Stepper, Switch, TierChip, fmtSeconds, useEstimate, useTierChoice, RailHandle, useRail } from '../ui';
 import { tierSizeOf } from '../renderTier';
 import Viewer, { recreate, remove } from '../Viewer';
 
@@ -113,8 +113,11 @@ export default function ExtendPage() {
     if (n) setViewing(n.id);
   };
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '360px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <div className="tabs">
           <button type="button" className={!transition ? 'on' : ''} onClick={() => setParams({ mode: null })}>Extend</button>

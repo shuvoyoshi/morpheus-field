@@ -123,7 +123,7 @@ function modelLabel(t: Take): string {
   const image = isImage(t);
   const object = isModel(t);
   const cutoutBg = s.background === 'color' ? `over ${s.color}` : s.background === 'blur' ? 'blurred background' : s.background === 'image' ? 'new background' : 'transparent';
-  return object ? `Object · TRELLIS.2 ${s.quality === 'quality' ? 'high' : 'draft'}`
+  return object ? `Model · TRELLIS.2 ${s.quality === 'quality' ? 'high' : 'draft'}`
     : s.app === 'cutout' ? `Remove background · ${image ? 'BiRefNet' : s.mode === 'track' ? 'SAM 3.1 track' : s.mode === 'matte' ? 'BiRefNet' : 'BiRefNet + SAM 3.1'} · ${cutoutBg}`
     : s.app === 'restyle' ? `Restyle · ${s.styleName ?? 'custom look'} · Qwen-Image-Edit + LTX-2.5`
     : s.app === 'swap' ? 'Object swap · SAM 3.1 + Qwen-Image-Edit + LTX-2.5 inpaint'

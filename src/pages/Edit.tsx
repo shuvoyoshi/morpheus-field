@@ -9,7 +9,7 @@ import { api, inputUrl, mediaUrl, takeAsInput, uploadFile, type Take } from '../
 import { EDIT_APPS, EXPAND_ASPECTS, RELIGHT_DIRECTIONS, IMAGE_QUALITY, editAppById, editVariants, type EditMode } from '../catalog';
 import { navigate, setParams, useRoute } from '../router';
 import { inFeed, setHandoff, settingsOf, toast, useStore } from '../store';
-import { ChipMenu, Clip, Icon, MediaCard, Spill, Stepper, fmtSeconds, presetClip, useEstimate } from '../ui';
+import { ChipMenu, Clip, Icon, MediaCard, Spill, Stepper, fmtSeconds, presetClip, useEstimate, RailHandle, useRail } from '../ui';
 import Viewer, { animate, recreate, remove } from '../Viewer';
 import { useDropZone, usePageDrop } from '../drop';
 import { DropWell } from './Mirror';
@@ -157,8 +157,11 @@ export default function EditPage() {
   const compareTake = typeof view === 'number' ? takes.find((t) => t.id === view) : undefined;
   const batches = groupBatches(takes);
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout" style={{ gridTemplateColumns: '372px 1fr' }}>
+    <div className={`rail-layout ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <Spill src={presetClip(app.cover)} video />
         <div className="display" style={{ fontSize: 26 }}>{app.name}</div>

@@ -13,7 +13,7 @@ import { api, inputUrl, mediaUrl, posterUrl, takeAsInput, uploadFile, type Stage
 import { usePageDrop, useDropZone } from '../drop';
 import { setParams, useRoute } from '../router';
 import { inFeed, isImage, isModel, settingsOf, toast, useStore } from '../store';
-import { ChipMenu, Icon, MediaCard, Stepper, Switch, TierChip, fmtSeconds, useEstimate, useTierChoice } from '../ui';
+import { ChipMenu, Icon, MediaCard, Stepper, Switch, TierChip, fmtSeconds, useEstimate, useTierChoice, RailHandle, useRail } from '../ui';
 import Viewer, { recreate, remove } from '../Viewer';
 import { MentionBox } from '../Mention';
 import {
@@ -523,8 +523,11 @@ export default function StagePage() {
   const moveName = scene.move === 'custom' ? 'Custom' : CAMERA_MOVES.find((m) => m.id === scene.move)?.name;
   const moving = prop?.to ? prop : null;
 
+  const [railOpen, toggleRail] = useRail();
+
   return (
-    <div className="rail-layout stage-page" style={{ gridTemplateColumns: '380px 1fr' }}>
+    <div className={`rail-layout stage-page ${railOpen ? '' : 'rail-closed'}`}>
+      <RailHandle open={railOpen} onToggle={toggleRail} />
       <aside className="rail">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="display" style={{ fontSize: 26 }}>Stage</div>

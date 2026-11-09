@@ -23,7 +23,7 @@ import { buildLtxGraph } from './graphs/ltx.js';
 import { buildLtx25Graph, ltx25EffectiveSize, ltx25Mode, LTX25_FPS, snapFrames } from './graphs/ltx25.js';
 import { applyPost } from './graphs/director.js';
 import { advance, cleanScene, getPlan, initScenes, plannerReasoningOverride, postBlockingReason, shootScene, shotsOf, startPlan, waitingCuts } from './scene.js';
-import { buildStillsGraph } from './graphs/stills.js';
+import { buildStillsGraph, type StillsModel } from './graphs/stills.js';
 import { listUserLoras, pickLoras, type LoraFamily } from './loras.js';
 import { buildDreamGraph, buildRedrawGraph, buildSharpenGraph, redrawBatch, type UpscaleSource } from './graphs/upscale.js';
 import {
@@ -54,7 +54,7 @@ import { closePairSession, openPairSession, pairSession } from './phoneApp.js';
 import { load as loadClip, measureLoop, planBridge, planRegen, planTrim, scoreWindow, videoInfo, type SeamMeasure } from './seam.js';
 import { buildSeamBridgeGraph, buildSeamRegenGraph, buildSeamTrimGraph } from './graphs/seam.js';
 import { buildHdrGraph } from './graphs/hdr.js';
-import { OBJECT_QUALITY, TURNTABLE, buildTrellisGraph, type ObjectQuality } from './graphs/trellis.js';
+import { OBJECT_QUALITY, TURNTABLE, buildTrellisGraph, type ObjectModel, type ObjectQuality } from './graphs/trellis.js';
 import { collectHdr } from './hdr.js';
 import { buildStageLookGraph, buildStageShotGraph, lookEditInstruction, lookPrompt } from './graphs/stage.js';
 import { checkSize, ingestBlocking, rasterBlocking, stageLookFrame } from './stage.js';
@@ -63,6 +63,8 @@ import { appTier, isRenderTier, parseTier, tierSizeOf, type RenderTier, type Tie
 import { currentTier, setTier, tierState } from './renderTier.js';
 import { isVideoDecode, type VideoDecode } from '../src/videoDecode.js';
 import { setVideoDecode, videoDecodeState } from './videoDecode.js';
+import { setVramClear, startVramAutoClear, vramClearInfo, vramClearOn } from './vramClear.js';
+import { systemStats } from './sysstats.js';
 import { MIN_PASSWORD, installJudge, type JudgeState } from './judge.js';
 import { estimate } from './estimate.js';
 import { llmChat, type LLMContentPart, type LLMMessage } from './llm.js';
@@ -256,7 +258,7 @@ app.get('/live', { websocket: true }, (conn) => {
 // ---------- API ----------
 
 app.get('/api/status', async () => {
-  const [st, api, renderTier, videoDecode] = await Promise.all([comfy.getStatus(), eng.apiUp(), tierState(), videoDecodeState()]);
+  const [st, api, renderTier, videoDecode, sys] = await Promise.all([comfy.getStatus(), eng.apiUp(), tierState(), videoDecodeState(), systemStats()]);
   return {
     ...st,
     // Cloud target: the local ComfyUI server is irrelevant, the v2 API is the engine.
@@ -269,6 +271,11 @@ app.get('/api/status', async () => {
     comfyUrl: config.comfyUrl,
     renderTier,
     videoDecode,
+    vramAutoClear: vramClearOn(),
+    // The machine's vitals (CPU/RAM/disk + per-GPU usage, VRAM, temps) and the
+    // countdown to the next idle-VRAM free, for the engine card.
+    sys,
+    vramClear: vramClearInfo(),
     // OPENFIELD_LLM_REASONING overrides the Director's "Think first" switch; the page shows it as set by the server.
     plannerReasoning: plannerReasoningOverride(),
     judge: judgeState?.(),
@@ -278,10 +285,11 @@ app.get('/api/status', async () => {
 /**
  * Machine-wide settings; each state says where its value came from.
  * renderTier: the video render size. videoDecode: whole-clip or chunked video decode.
+ * vramAutoClear: free idle models on a 1-minute tick while the queue is empty.
  */
-app.get('/api/settings', async () => ({ renderTier: await tierState(), videoDecode: await videoDecodeState() }));
+app.get('/api/settings', async () => ({ renderTier: await tierState(), videoDecode: await videoDecodeState(), vramAutoClear: vramClearOn() }));
 app.put('/api/settings', async (req, reply) => {
-  const b = (req.body ?? {}) as { renderTier?: unknown; videoDecode?: unknown };
+  const b = (req.body ?? {}) as { renderTier?: unknown; videoDecode?: unknown; vramAutoClear?: unknown };
   if ('renderTier' in b && b.renderTier !== null && !isRenderTier(b.renderTier)) {
     return reply.code(400).send({ error: 'renderTier is 480p, 720p, 1080p, or null for the default' });
   }
@@ -290,7 +298,8 @@ app.put('/api/settings', async (req, reply) => {
   }
   if ('renderTier' in b) setTier(b.renderTier as RenderTier | null);
   if ('videoDecode' in b) setVideoDecode(b.videoDecode as VideoDecode | null);
-  return { renderTier: await tierState(), videoDecode: await videoDecodeState() };
+  if ('vramAutoClear' in b) setVramClear(b.vramAutoClear === true);
+  return { renderTier: await tierState(), videoDecode: await videoDecodeState(), vramAutoClear: vramClearOn() };
 });
 
 // ---------- agent ----------
@@ -403,6 +412,9 @@ app.post('/api/phone/start', async (_req, reply) => {
     const info = await openPhoneSession({
       port: config.phonePort,
       host: config.phoneHost,
+      // Set OPENFIELD_PHONE_PUBLIC_HOST to a tunnel URL to enable mobile-data
+      // access: the link then goes public and is PIN-protected (server/phone.ts).
+      publicUrl: config.phonePublicHost,
       onClip: async (clip) => ({
         token: await eng.uploadInput(`openfield_phone_${Date.now()}_${safeShotName(clip.name.replace(/\.[^.]+$/, ''))}.${clip.ext}`, clip.data, clip.mime),
         name: clip.name,
@@ -902,18 +914,21 @@ async function graphFor(b: any, seed: number): Promise<Built> {
     });
   } else if (b.kind === 'still') {
     kind = 'still';
-    const flux2 = b.model === 'flux2';
+    const model = stillModel(b.model);
+    // Flux-architecture stills (FLUX.2 dev, Klein, FLUX.3) take reference pictures
+    // (FLUX.2/Klein as ReferenceLatents, FLUX.3 as ReferenceMultiLatent): your own
+    // first, then the cast's (resolveCast).
+    const refsOn = model === 'flux2' || model === 'klein' || model === 'flux3';
     graph = buildStillsGraph({
-      model: flux2 ? 'flux2' : 'qwen',
+      model,
       quality: b.quality === 'draft' ? 'draft' : 'quality',
       prompt: b.prompt,
       negative: typeof b.negative === 'string' && b.negative ? b.negative : undefined,
       width: b.width || 1328,
       height: b.height || 752,
       seed,
-      loras: await pickLoras(b.loras, flux2 ? 'flux2' : 'qwen', 'Image'),
-      // FLUX.2 references: your own pictures first, then the cast's (resolveCast).
-      refImages: flux2 ? flux2Refs(b) : undefined,
+      loras: await pickLoras(b.loras, stillLoraFamily(model), 'Image'),
+      refImages: refsOn ? flux2Refs(b) : undefined,
     });
   } else if (b.videoModel === 'ltx25') {
     kind = 'video';
@@ -1110,6 +1125,15 @@ app.post('/api/generate', async (req, reply) => {
 const castField = (b: any) => (b.kind === 'edit' ? 'instruction' : 'prompt');
 const isLtxShot = (b: any) => (b.kind === undefined || b.kind === 'video') && b.videoModel === 'ltx25';
 
+/** The still models the Image app can queue, and the LoRA family each one runs. */
+const STILL_LORA_FAMILY: Record<StillsModel, 'qwen' | 'flux2'> = {
+  qwen: 'qwen', qwen21: 'qwen', zimage: 'qwen',
+  flux2: 'flux2', klein: 'flux2', krea2: 'flux2', flux3: 'flux2',
+};
+const stillModel = (model: unknown): StillsModel =>
+  (typeof model === 'string' && model in STILL_LORA_FAMILY ? (model as StillsModel) : 'qwen');
+const stillLoraFamily = (model: StillsModel): 'qwen' | 'flux2' => STILL_LORA_FAMILY[model];
+
 /** FLUX.2 reads up to this many reference pictures per still (each is ~1 MP of latent). */
 const FLUX2_REFS = 6;
 const ownRefs = (b: any): string[] =>
@@ -1122,7 +1146,7 @@ const flux2Refs = (b: any): string[] => {
 
 /** The model family an app's own LoRAs must match, or null where they do not apply. */
 function loraFamily(b: any): LoraFamily | null {
-  if (b.kind === 'still') return b.model === 'flux2' ? 'flux2' : 'qwen';
+  if (b.kind === 'still') return stillLoraFamily(stillModel(b.model));
   if (isLtxShot(b)) return 'ltx';
   if ((b.kind === undefined || b.kind === 'video') && b.videoModel === 'h3') return 'h3';
   return null;
@@ -1488,6 +1512,7 @@ const ASSET_TOKEN_RE = /^asset:[0-9a-f-]{36}$/i;
  */
 async function objectGraph(b: any, seed: number): Promise<Built> {
   if (!eng.isLocal()) throw new Error('Make 3D collects its GLB from a local ComfyUI; it does not run on a cloud engine yet.');
+  const model: ObjectModel = b.model === 'pixal3d' ? 'pixal3d' : 'trellis';
   const quality: ObjectQuality = b.quality === 'quality' ? 'quality' : 'draft';
   const removeBackground = b.removeBackground !== false;
   let image: string;
@@ -1513,9 +1538,9 @@ async function objectGraph(b: any, seed: number): Promise<Built> {
   const q = OBJECT_QUALITY[quality];
   return {
     kind: 'object', parent,
-    graph: buildTrellisGraph({ image, seed, quality, removeBackground }),
+    graph: buildTrellisGraph({ image, seed, quality, model, removeBackground }),
     settings: {
-      app: 'object', quality, removeBackground, image, sourceTake: parent, ...named,
+      app: 'object', model, quality, removeBackground, image, sourceTake: parent, ...named,
       faces: q.faces, texture: q.texture, resolution: q.resolution,
       width: TURNTABLE.size, height: TURNTABLE.size,
     },
@@ -2341,25 +2366,30 @@ app.get('/api/models', async () => {
         encoder: 'Qwen3VL-32B NVFP4 (15GB)',
         native: '24fps · 768px-class · 5-15s (17k+5 frame grid) · audio always on',
         strengths: 'dialogue/voice, held stillness, direction-following, refs',
-        license: 'Community license EXCLUDES US, EU, UK and South Korea; experiments only until licensed',
+        license: 'Community license',
       },
       ltx25: {
         name: 'LTX-2.5 (22B distilled)',
         checkpoints: 'int8-convrot 21GB · Gemma-4-12B-with-proj encoder 15GB',
         native: '24fps · t2v/i2v/flf2v · two-stage (half-res base → 2x refine) · 8+4 steps · audio optional',
         strengths: 'multishot consistency across cuts, FLF2V loop closure, cleaner motion (neural decoder VAE)',
-        license: 'LTX-2.x community license — free commercial use under $10M ARR',
+        license: 'LTX-2.x community license',
       },
       ltx: {
         name: 'LTX-Video 2.3 (22B)',
         checkpoints: 'SpiceModels fine-tunes via dropdown · Gemma-3-12B encoder',
         native: '25fps · two-stage (half-res base → 2x refine) · distilled 8+4 steps · audio',
         strengths: 'fast animation-tuned generation; community checkpoint/LoRA playground',
-        license: 'LTX-2 community license — check per-checkpoint terms for fine-tunes',
+        license: 'LTX-2 community license',
       },
       stills: {
-        qwen: 'Qwen-Image fp8 · Apache 2.0 · text/layout specialist',
-        flux2: 'FLUX.2 dev fp8mixed 34GB · non-commercial dev license · photoreal lead',
+        qwen: 'Qwen-Image fp8 · text/layout specialist',
+        flux2: 'FLUX.2 dev fp8mixed 34GB · photoreal lead · references',
+        qwen21: 'Qwen-Image 2.1 int8 · sharper text, layout and detail',
+        krea2: 'Krea-2 Turbo fp8 · fast few-step stills',
+        zimage: 'Z-Image Turbo bf16 · fast, clean stills',
+        klein: 'FLUX.2 Klein 9B fp8 · compact · references',
+        flux3: 'FLUX.3 int8 · newest FLUX',
       },
     },
   };
@@ -2667,6 +2697,8 @@ async function reconcile() {
   }
 }
 setInterval(() => void reconcile(), 20_000);
+// Free idle models every minute while the queue is empty (Setup > Engine switch).
+startVramAutoClear();
 
 // Cast hero frames are ordinary takes queued through the same path.
 setCastQueue(queueTakes);
