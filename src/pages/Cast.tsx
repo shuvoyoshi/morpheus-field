@@ -10,7 +10,7 @@ import { refreshCast, useCast } from '../castStore';
 import { useDropZone, usePageDrop } from '../drop';
 import { KIND_LABEL } from '../Mention';
 import { navigate, setParams, useRoute } from '../router';
-import { toast } from '../store';
+import { setCastTabInPickers, toast, useStore } from '../store';
 import { Icon } from '../ui';
 
 const KINDS: { id: CastKind; label: string; hint: string }[] = [
@@ -30,6 +30,7 @@ export default function CastPage() {
   const creating = params.get('new') === '1';
   const editing = editId ? cast.find((m) => m.id === editId) ?? null : null;
   const open = creating || !!editing;
+  const castTab = useStore((s) => s.castTab);
 
   return (
     <div className="page-scroll">
@@ -42,7 +43,13 @@ export default function CastPage() {
               stills compose it from its pictures, videos hold it on a reference sheet, so the same face and the same coat show up in every shot.
             </p>
           </div>
-          {!open && <button type="button" className="btn accent" onClick={() => setParams({ new: '1', edit: null })}><Icon name="plus" size={14} />New cast member</button>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' }}>
+            {!open && <button type="button" className="btn accent" onClick={() => setParams({ new: '1', edit: null })}><Icon name="plus" size={14} />New cast member</button>}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12.5, color: 'var(--dim)', fontWeight: 600 }}>
+              <input type="checkbox" checked={castTab} onChange={(e) => setCastTabInPickers(e.target.checked)} style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--accent)' }} />
+              Show cast in media pickers
+            </label>
+          </div>
         </div>
 
         {open && <CastForm key={editing?.id ?? 'new'} member={editing} onDone={() => setParams({ new: null, edit: null })} />}

@@ -46,12 +46,12 @@ export interface ImageModel {
 }
 
 export const IMAGE_MODELS: ImageModel[] = [
-  { id: 'qwen', label: 'Qwen-Image', vendor: 'Alibaba', note: 'Text, layout and posters. Apache 2.0.', license: 'Apache 2.0', loraFamily: 'qwen' },
+  { id: 'qwen', label: 'Qwen-Image', vendor: 'Alibaba', note: 'Text, layout and posters. References render through Qwen-Image-Edit 2509. Apache 2.0.', license: 'Apache 2.0', refs: true, loraFamily: 'qwen' },
   { id: 'flux2', label: 'FLUX.2 dev', vendor: 'Black Forest Labs', note: 'Photoreal lead. References keep faces, clothes and objects in a new photograph.', license: 'FLUX.2 dev', refs: true, loraFamily: 'flux2' },
-  { id: 'qwen21', label: 'Qwen-Image 2.1', vendor: 'Alibaba', note: 'Newer Qwen: sharper text, layout and detail.', license: 'Apache 2.0', loraFamily: 'qwen' },
+  { id: 'qwen21', label: 'Qwen-Image 2.1', vendor: 'Alibaba', note: 'Newer Qwen: sharper text, layout and detail. References are seen by its vision encoder.', license: 'Apache 2.0', refs: true, loraFamily: 'qwen' },
   { id: 'krea2', label: 'Krea-2 Turbo', vendor: 'Krea', note: 'Fast turbo stills with strong style control.', license: 'Krea-2 Turbo', loraFamily: 'flux2' },
   { id: 'zimage', label: 'Z-Image Turbo', vendor: 'Alibaba', note: 'Fast turbo stills, clean and crisp.', license: 'Z-Image Turbo', loraFamily: 'qwen' },
-  { id: 'klein', label: 'FLUX.2 Klein 9B', vendor: 'Black Forest Labs', note: 'Compact FLUX.2: fast and photographic. References carry over.', license: 'FLUX.2 Klein 9B', refs: true, loraFamily: 'flux2' },
+  { id: 'klein', label: 'FLUX.2 Klein 9B', vendor: 'Black Forest Labs', note: 'Compact FLUX.2: fast and photographic.', license: 'FLUX.2 Klein 9B', loraFamily: 'flux2' },
   { id: 'flux3', label: 'FLUX.3', vendor: 'Black Forest Labs', note: 'Newest FLUX. References carry over into an edit.', license: 'FLUX.3', refs: true, loraFamily: 'flux2' },
 ];
 

@@ -14,6 +14,7 @@ import { MentionBox, useMentioned } from '../Mention';
 import { LoraChips, useLoraPicks } from '../Loras';
 import { sheetLayout, sheetMembers, sheetSize } from '../castSheet';
 import type { CastMember } from '../api';
+import { MediaPicker, sourceToFile } from '../SourcePick';
 
 type Mode = 'create' | 'loop';
 
@@ -299,16 +300,14 @@ function CastShot({ members, mode, onMode, size }: { members: CastMember[]; mode
 }
 
 export function Well({ onFiles, compact, loop }: { onFiles: (f: FileList | File[]) => void; compact?: boolean; loop?: boolean }) {
-  const input = useRef<HTMLInputElement>(null);
-  const zone = useDropZone(onFiles);
   return (
-    <div className={`well ${zone.over ? 'drag' : ''}`} style={compact ? { padding: 10 } : undefined}
-      onClick={() => input.current?.click()} {...zone.props}>
-      <input ref={input} type="file" accept="image/*" multiple hidden onChange={(e) => e.target.files && onFiles(e.target.files)} />
-      {!compact && <div className="well-icons"><span><Icon name="image" /></span></div>}
-      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{compact ? '+ Add frame' : loop ? 'Add the image to loop' : 'Add start or end frame'}</div>
-      {!compact && <div style={{ fontSize: 12, marginTop: 2 }}>{loop ? 'It becomes the first and last frame' : 'Optional. Drop images, or skip for text to video'}</div>}
-    </div>
+    <MediaPicker
+      accept={['image']}
+      title={compact ? '+ Add frame' : loop ? 'Add the image to loop' : 'Add start or end frame'}
+      sub={compact ? undefined : loop ? 'It becomes the first and last frame' : 'Optional. Pick from the cast or library, or drop images'}
+      icon="image"
+      onPick={(s) => void sourceToFile(s).then((f) => { if (f) onFiles([f]); else toast('could not load that media', true); })}
+    />
   );
 }
 

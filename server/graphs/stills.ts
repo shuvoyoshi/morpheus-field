@@ -1,17 +1,30 @@
 /**
  * Stills graph builders — seven models, each with a DRAFT and a QUALITY mode.
  *
- *  qwen     — Qwen-Image fp8. DRAFT = Lightning 8-step LoRA; QUALITY = no LoRA,
- *             50 steps, CFG 2.5. `negative` only matters here (CFG > 1).
+ *  qwen     — Qwen-Image fp8, text to image. DRAFT = Lightning 8-step LoRA;
+ *             QUALITY = no LoRA, 50 steps, CFG 2.5. `negative` only matters
+ *             here (CFG > 1). Reference pictures are routed by the dispatch to
+ *             the Edit 2509 compose path (buildEditGraph compose): the base
+ *             UNet is not trained for reference latents and renders them with
+ *             artifacts.
  *  flux2    — FLUX.2 dev fp8mixed, the photorealism lead. FluxGuidance 4, 20
  *             steps. DRAFT = Turbo LoRA @ 8 steps. Reference pictures go in as
  *             ReferenceLatents (the FLUX.2 multi-reference recipe).
  *  qwen21   — Qwen-Image 2.1 (the qwen_image21 model class): QwenImage21Cache +
  *             TextEncodeQwenImage21, 25 steps CFG 1. DRAFT = the 8-step distill.
- *  krea2    — Krea-2 Turbo, a few-step model: CFG 1, 8 (draft) / 25 (high).
- *  zimage   — Z-Image Turbo, AuraFlow shift 3, res_multistep, CFG 1.
- *  klein    — FLUX.2 Klein 9B: Flux2 scheduler + CFGGuider 5, references as
- *             ReferenceLatents.
+ *             References go in as ReferenceLatents on the positive conditioning
+ *             (the same mechanism the official encoder node uses; the model
+ *             class splices them into the sequence).
+ *  krea2    — Krea-2 Turbo, a few-step model, text to image: CFG 1, 8 (draft)
+ *             / 25 (high). Not reference-capable: the turbo weights render
+ *             spliced reference latents with artifacts.
+ *  zimage   — Z-Image Turbo, text to image: AuraFlow shift 3, res_multistep,
+ *             CFG 1. Not reference-capable: the turbo weights are not the
+ *             Z-Image-Omni release and dither around spliced references.
+ *  klein    — FLUX.2 Klein 9B: Flux2 scheduler + CFGGuider 5, text to image.
+ *             Not reference-capable: the 9B distill renders spliced reference
+ *             latents as noise (tried both ReferenceLatents and
+ *             ReferenceMultiLatent).
  *  flux3    — FLUX.3 (a Flux2 subclass): official recipe, a plain KSampler at
  *             CFG 1 (er_sde, 15 steps), Qwen3-VL `flux3` encoder, `flux2` VAE;
  *             references through ReferenceMultiLatent.
@@ -40,7 +53,17 @@ export interface StillsParams {
   negative?: string;
   /** Your own LoRAs (server/loras.ts checked the family), applied in order. */
   loras?: { name: string; strength: number }[];
-  /** flux2 / klein (ReferenceLatent) or flux3 (ReferenceMultiLatent): reference pictures, input tokens. */
+  /**
+    * Reference pictures, input tokens.
+    *  - qwen21 / flux2: ReferenceLatents appended to the positive
+    *    conditioning, consumed in each model class's sequence;
+    *  - flux3: ReferenceMultiLatent;
+    *  - qwen: ignored here — the dispatch routes qwen + references to the
+    *    Edit 2509 compose graph (the base UNet is text-to-image);
+    *  - krea2 / zimage / klein: dropped by the dispatch (their weights are not
+    *    trained for reference conditioning and render it with artifacts or
+    *    noise).
+    */
   refImages?: string[];
 }
 
@@ -56,7 +79,7 @@ function chainLoras(g: Record<string, unknown>, from: [string, number], loras?: 
   return model;
 }
 
-/** Append the FLUX.2 multi-reference chain (LoadImage -> scale -> VAE encode -> ReferenceLatent). */
+/** Append the multi-reference chain (LoadImage -> scale -> VAE encode -> ReferenceLatent). */
 function refChain(g: Record<string, unknown>, cond: [string, number], refImages?: string[]): [string, number] {
   (refImages ?? []).forEach((image, i) => {
     Object.assign(g, {
@@ -70,6 +93,9 @@ function refChain(g: Record<string, unknown>, cond: [string, number], refImages?
   return cond;
 }
 
+/** Text to image only. Reference pictures ride the Edit 2509 compose path
+ *  (see the still branch in server/index.ts): the base UNet is not trained
+ *  for reference latents and renders them with artifacts. */
 function qwenGraph(p: StillsParams): Record<string, unknown> {
   const draft = p.quality === 'draft';
   const g0: Record<string, unknown> = {};
@@ -120,6 +146,12 @@ function qwen21Graph(p: StillsParams): Record<string, unknown> {
       inputs: { model: ['u', 0], lora_name: 'p_qwen_image_2.1_8step_v0.1.safetensors', strength_model: 1.0 },
     };
   }
+  // Reference pictures go in as ReferenceLatents on the positive conditioning:
+  // the same mechanism the official TextEncodeQwenImage21 encoder node uses
+  // (it sets conditioning reference_latents), consumed by the qwen_image21
+  // model class. (The encoder's autogrow images input does not resolve links
+  // in the API format, so the plain reference chain is the reliable path.)
+  const cond = refChain(g0, ['te', 0], p.refImages);
   const g: Record<string, unknown> = {
     u: { class_type: 'UNETLoader', inputs: { unet_name: 'qwen_image_2.1_int8_convrot.safetensors', weight_dtype: 'default' } },
     c: { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen3vl_8b_int8_convrot.safetensors', type: 'qwen_image', device: 'default' } },
@@ -132,7 +164,7 @@ function qwen21Graph(p: StillsParams): Record<string, unknown> {
     k: {
       class_type: 'KSampler',
       inputs: {
-        model: ['cache', 0], positive: ['te', 0], negative: ['te', 1], latent_image: ['lat', 0],
+        model: ['cache', 0], positive: cond, negative: ['te', 1], latent_image: ['lat', 0],
         seed: p.seed,
         steps: draft ? 8 : 25,
         cfg: 1.0,
@@ -145,6 +177,10 @@ function qwen21Graph(p: StillsParams): Record<string, unknown> {
   return { ...g, ...g0 };
 }
 
+/** Text to image. The Krea2 DiT can splice reference latents (with
+ *  reference_latents_method "index"), but the turbo weights render them with
+ *  scanline artifacts — it is not trained for reference conditioning, so the
+ *  dispatch drops refs for this model (see server/index.ts). */
 function krea2Graph(p: StillsParams): Record<string, unknown> {
   const draft = p.quality === 'draft';
   const g0: Record<string, unknown> = {};
@@ -172,6 +208,10 @@ function krea2Graph(p: StillsParams): Record<string, unknown> {
   return { ...g, ...g0 };
 }
 
+/** Text to image. The ZImage (Lumina2) class has an omni path for reference
+ *  latents, but Z-Image Turbo's weights are text-to-image: spliced references
+ *  render with heavy dithering (the omni weights are a separate release), so
+ *  the dispatch drops refs for this model (see server/index.ts). */
 function zimageGraph(p: StillsParams): Record<string, unknown> {
   const draft = p.quality === 'draft';
   const g0: Record<string, unknown> = {};
@@ -200,19 +240,21 @@ function zimageGraph(p: StillsParams): Record<string, unknown> {
   return { ...g, ...g0 };
 }
 
+/** Text to image. The 9B distill is not trained for reference latents: both
+ *  ReferenceLatents and ReferenceMultiLatent render spliced references as
+ *  noise, so the dispatch drops refs for this model (see server/index.ts). */
 function kleinGraph(p: StillsParams): Record<string, unknown> {
   const draft = p.quality === 'draft';
   const steps = draft ? 8 : 20;
   const g0: Record<string, unknown> = {};
   const model = chainLoras(g0, ['u', 0], p.loras);
-  const cond = refChain(g0, ['pos', 0], p.refImages);
   const g: Record<string, unknown> = {
     u: { class_type: 'UNETLoader', inputs: { unet_name: 'flux-2-klein-base-9b-fp8.safetensors', weight_dtype: 'default' } },
     c: { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen3vl_8b_int8_convrot.safetensors', type: 'flux2', device: 'default' } },
     v: { class_type: 'VAELoader', inputs: { vae_name: 'flux2-vae.safetensors' } },
     pos: { class_type: 'CLIPTextEncode', inputs: { clip: ['c', 0], text: p.prompt } },
     neg: { class_type: 'CLIPTextEncode', inputs: { clip: ['c', 0], text: p.negative ?? '' } },
-    cfg: { class_type: 'CFGGuider', inputs: { model, positive: cond, negative: ['neg', 0], cfg: 5 } },
+    cfg: { class_type: 'CFGGuider', inputs: { model, positive: ['pos', 0], negative: ['neg', 0], cfg: 5 } },
     sched: { class_type: 'Flux2Scheduler', inputs: { steps, width: p.width, height: p.height } },
     sampler: { class_type: 'KSamplerSelect', inputs: { sampler_name: 'euler' } },
     noise: { class_type: 'RandomNoise', inputs: { noise_seed: p.seed } },
@@ -262,8 +304,8 @@ function flux3Graph(p: StillsParams): Record<string, unknown> {
   // appends their latents to the conditioning (the FLUX.3 image-edit recipe).
   if (p.refImages?.length) {
     p.refImages.forEach((image, i) => { g0[`ri${i}`] = { class_type: 'LoadImage', inputs: { image } }; });
-    const rml: Record<string, unknown> = { positive: ['pos', 0], vae: ['v', 0], resolution: 'resize', megapixels: 1.0 };
-    p.refImages.forEach((_, i) => { rml[`image${i}`] = [`ri${i}`, 0]; });
+    const rml: Record<string, unknown> = { positive: ['pos', 0], vae: ['v', 0], resolution: 'resize', 'resolution.megapixels': 1.0 };
+    p.refImages.forEach((_, i) => { rml[`images.image${i}`] = [`ri${i}`, 0]; });
     g0.rml = { class_type: 'ReferenceMultiLatent', inputs: rml };
     (g.k as { inputs: Record<string, unknown> }).inputs.positive = ['rml', 0];
     (g.k as { inputs: Record<string, unknown> }).inputs.negative = ['rml', 1];

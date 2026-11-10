@@ -915,10 +915,37 @@ async function graphFor(b: any, seed: number): Promise<Built> {
   } else if (b.kind === 'still') {
     kind = 'still';
     const model = stillModel(b.model);
-    // Flux-architecture stills (FLUX.2 dev, Klein, FLUX.3) take reference pictures
-    // (FLUX.2/Klein as ReferenceLatents, FLUX.3 as ReferenceMultiLatent): your own
-    // first, then the cast's (resolveCast).
-    const refsOn = model === 'flux2' || model === 'klein' || model === 'flux3';
+    // Your own first, then the cast's (resolveCast). Krea-2 Turbo, Z-Image
+    // Turbo and FLUX.2 Klein are text-to-image: their weights splice reference
+    // latents in but render them with artifacts (or straight noise), so
+    // references are dropped for them (the Image page does not offer the input
+    // on those models).
+    const refs = model === 'krea2' || model === 'zimage' || model === 'klein' ? [] : flux2Refs(b);
+    if (model === 'qwen' && refs.length) {
+      // Qwen-Image's trained reference path is Qwen-Image-Edit 2509: the VL
+      // encoder sees the pictures and the frame is built from an empty latent
+      // (the same compose graph the Cast and Edit apps use). The base UNet is
+      // text-to-image and renders raw reference latents with artifacts.
+      const images = refs.slice(0, 3);
+      const have = new Set(await comfy.comboOptions('LoraLoaderModelOnly', 'lora_name'));
+      const snap = (n: number) => Math.max(256, Math.round(n / 16) * 16);
+      const ratio = (Number(b.width) || 1328) / (Number(b.height) || 752);
+      const h = Math.sqrt(Math.min(1.3e6, (Number(b.width) || 1328) * (Number(b.height) || 752)) / ratio);
+      size = { width: snap(h * ratio), height: snap(h) };
+      return {
+        kind: 'still',
+        graph: buildEditGraph({
+          images, instruction: String(b.prompt ?? ''), ...size, seed,
+          quality: b.quality === 'draft' ? 'draft' : 'quality',
+          lightning: have.has(EDIT_LIGHTNING_2509) ? EDIT_LIGHTNING_2509 : EDIT_LIGHTNING,
+          compose: true,
+          loras: await pickLoras(b.loras, 'qwen', 'Image'),
+        }),
+        settings: size,
+      };
+    }
+    // qwen21 / flux2 take ReferenceLatents appended to the positive
+    // conditioning; flux3 uses ReferenceMultiLatent.
     graph = buildStillsGraph({
       model,
       quality: b.quality === 'draft' ? 'draft' : 'quality',
@@ -928,7 +955,7 @@ async function graphFor(b: any, seed: number): Promise<Built> {
       height: b.height || 752,
       seed,
       loras: await pickLoras(b.loras, stillLoraFamily(model), 'Image'),
-      refImages: refsOn ? flux2Refs(b) : undefined,
+      refImages: refs,
     });
   } else if (b.videoModel === 'ltx25') {
     kind = 'video';
@@ -2388,8 +2415,8 @@ app.get('/api/models', async () => {
         qwen21: 'Qwen-Image 2.1 int8 · sharper text, layout and detail',
         krea2: 'Krea-2 Turbo fp8 · fast few-step stills',
         zimage: 'Z-Image Turbo bf16 · fast, clean stills',
-        klein: 'FLUX.2 Klein 9B fp8 · compact · references',
-        flux3: 'FLUX.3 int8 · newest FLUX',
+        klein: 'FLUX.2 Klein 9B fp8 · compact',
+        flux3: 'FLUX.3 int8 · newest FLUX · references',
       },
     },
   };

@@ -3,12 +3,27 @@
  * pick one of your takes, or drop a file. Either way the media is uploaded as
  * an input and comes back as a token plus the facts the page sizes itself by.
  */
-import { useEffect, useState } from 'react';
-import { mediaUrl, posterUrl, takeAsInput, uploadFile, type Take } from './api';
+import { useEffect, useRef, useState } from 'react';
+import { mediaUrl, posterUrl, takeAsInput, uploadFile, type CastMember, type CastRef, type Take } from './api';
+import { useCast } from './castStore';
 import { useDropZone } from './drop';
-import { DropWell } from './pages/Mirror';
 import { isAudio, isImage, isModel, settingsOf, toast, useStore } from './store';
 import { Icon } from './ui';
+
+/** The plain "browse your device" well — the Device tab of the media picker. */
+function DeviceWell(p: { accept: string; onFile: (f: File) => void; icon: string; title: string; sub?: string; compact?: boolean }) {
+  const input = useRef<HTMLInputElement>(null);
+  const zone = useDropZone((files) => p.onFile(files[0]));
+  return (
+    <div className={`well ${zone.over ? 'drag' : ''}`} style={p.compact ? { padding: 10 } : undefined}
+      onClick={() => input.current?.click()} {...zone.props}>
+      <input ref={input} type="file" accept={p.accept} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onFile(f); }} />
+      {!p.compact && <div className="well-icons"><span><Icon name={p.icon} /></span></div>}
+      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{p.title}</div>
+      {p.sub && <div style={{ fontSize: 12, marginTop: 2 }}>{p.sub}</div>}
+    </div>
+  );
+}
 
 export type SourceKind = 'video' | 'image' | 'audio';
 
@@ -60,6 +75,18 @@ export async function sourceFromFile(f: File, kind: SourceKind): Promise<Source>
   return { token, kind, url, name: f.name.replace(/\.[^.]+$/, ''), ...m };
 }
 
+/** A cast reference or take is already on the server; fetch it as a File for pages that re-upload. */
+export async function sourceToFile(s: Source): Promise<File | null> {
+  try {
+    const blob = await (await fetch(s.url)).blob();
+    const ext = s.kind === 'video' ? 'mp4' : s.kind === 'audio' ? 'mp3' : 'png';
+    const mime = blob.type || (s.kind === 'video' ? 'video/mp4' : s.kind === 'audio' ? 'audio/mpeg' : 'image/png');
+    return new File([blob], `${s.name || 'media'}.${ext}`, { type: mime });
+  } catch {
+    return null;
+  }
+}
+
 const EXT_KIND: Record<string, SourceKind> = {
   mp4: 'video', mov: 'video', webm: 'video', m4v: 'video', mkv: 'video',
   png: 'image', jpg: 'image', jpeg: 'image', webp: 'image',
@@ -106,18 +133,8 @@ export function SourceSlot(p: {
   title: string;
   sub: string;
 }) {
-  const [busy, setBusy] = useState(false);
-  const takes = useStore((s) => s.takes.filter((t) => t.status === 'done' && t.output_path && !isModel(t) && (p.accept.includes(isImage(t) ? 'image' : isAudio(t) ? 'audio' : 'video'))).slice(0, 8));
   const v = p.value;
-
-  const take = async (t: Take) => {
-    setBusy(true);
-    try { p.onChange(await sourceFromTake(t)); } catch (e) { toast(e instanceof Error ? e.message : 'failed', true); } finally { setBusy(false); }
-  };
-  const file = async (f: File) => {
-    setBusy(true);
-    try { const src = await loadFile(f, p.accept); if (src) p.onChange(src); } finally { setBusy(false); }
-  };
+  const file = async (f: File) => { const src = await loadFile(f, p.accept); if (src) p.onChange(src); };
   // A filled slot takes a drop too: it replaces what is there.
   const replace = useDropZone((files) => void file(files[0]));
 
@@ -142,20 +159,94 @@ export function SourceSlot(p: {
           </div>
         )
       ) : (
-        <>
-          <DropWell accept={p.accept.map((k) => `${k}/*`).join(',')} onFile={(f) => void file(f)} icon={p.accept[0]} title={busy ? 'Loading...' : p.title} sub={p.sub} />
-          {takes.length > 0 && (
-            <div className="src-strip" aria-label="your takes">
-              {takes.map((t) => (
-                <button key={t.id} type="button" title={`Use take ${t.id}`} disabled={busy} onClick={() => void take(t)}>
-                  {isAudio(t)
-                    ? <span style={{ position: 'static', display: 'grid', placeItems: 'center', width: '100%', height: '100%', background: 'transparent', color: 'var(--accent)' }}><Icon name="audio" size={18} /></span>
-                    : <><img src={posterUrl(t.id)} alt="" loading="lazy" />{!isImage(t) && <span><Icon name="video" size={11} /></span>}</>}
-                </button>
-              ))}
+        <MediaPicker accept={p.accept} title={p.title} sub={p.sub} icon={p.accept[0]} onPick={(s) => p.onChange(s)} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The media picker: Device (browse/drop a file), Cast (your saved pictures)
+ * and Library (your takes). Only the tabs that have something to offer show,
+ * and the bar itself hides when there is just one.
+ */
+export function MediaPicker(p: {
+  accept: SourceKind[];
+  title: string;
+  sub?: string;
+  icon: string;
+  onPick: (s: Source) => void;
+}) {
+  const castTab = useStore((s) => s.castTab);
+  const cast = useCast();
+  const library = useStore((s) => s.takes
+    .filter((t) => t.status === 'done' && t.output_path && !isModel(t) && p.accept.includes(isImage(t) ? 'image' : isAudio(t) ? 'audio' : 'video'))
+    .slice(0, 48));
+  const castMembers = cast.filter((m) => m.refs.length > 0);
+  const showCast = p.accept.includes('image') && castTab && castMembers.length > 0;
+  const showLibrary = library.length > 0;
+  const tabs: { id: string; label: string }[] = [
+    { id: 'device', label: 'Device' },
+    ...(showCast ? [{ id: 'cast', label: `Cast · ${castMembers.length}` }] : []),
+    ...(showLibrary ? [{ id: 'library', label: 'Library' }] : []),
+  ];
+  const [tab, setTab] = useState('device');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if ((tab === 'cast' && !showCast) || (tab === 'library' && !showLibrary)) setTab('device');
+  }, [showCast, showLibrary]);
+
+  const pickFile = async (f: File) => {
+    setBusy(true);
+    try { const src = await loadFile(f, p.accept); if (src) p.onPick(src); } finally { setBusy(false); }
+  };
+  const pickTake = async (t: Take) => {
+    setBusy(true);
+    try { p.onPick(await sourceFromTake(t)); } catch (e) { toast(e instanceof Error ? e.message : 'failed', true); } finally { setBusy(false); }
+  };
+  const pickRef = (m: CastMember, r: CastRef) => {
+    p.onPick({ token: r.token, kind: 'image', url: r.url, name: m.name, w: r.w, h: r.h, seconds: 0 });
+  };
+
+  const device = <DeviceWell accept={p.accept.map((k) => `${k}/*`).join(',')} onFile={(f) => void pickFile(f)} icon={p.icon} title={busy ? 'Loading...' : p.title} sub={p.sub} />;
+
+  // Just the device: keep the old single well, no tab bar.
+  if (!showCast && !showLibrary) return device;
+
+  return (
+    <div>
+      <div className="seg" style={{ marginBottom: 8 }}>
+        {tabs.map((t) => (
+          <button key={t.id} type="button" className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>{t.label}</button>
+        ))}
+      </div>
+      {tab === 'device' && device}
+      {tab === 'cast' && showCast && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 260, overflowY: 'auto' }}>
+          {castMembers.map((m) => (
+            <div key={m.id}>
+              <div className="mono" style={{ fontSize: 11.5, color: 'var(--dim)', marginBottom: 4 }}>@{m.name}</div>
+              <div className="refs" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                {m.refs.map((r) => (
+                  <button key={r.token} type="button" className="ref" style={{ padding: 0, border: 0, cursor: 'pointer' }} title={`Use ${m.name}'s picture`} onClick={() => pickRef(m, r)}>
+                    <img src={r.url} alt="" loading="lazy" />
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
-        </>
+          ))}
+        </div>
+      )}
+      {tab === 'library' && showLibrary && (
+        <div className="src-strip" style={{ gridTemplateColumns: 'repeat(4, 1fr)', maxHeight: 260, overflowY: 'auto' }}>
+          {library.map((t) => (
+            <button key={t.id} type="button" title={`Use take ${t.id}`} disabled={busy} onClick={() => void pickTake(t)}>
+              {isAudio(t) && <span style={{ position: 'static', display: 'grid', placeItems: 'center', width: '100%', height: '100%', background: 'transparent', color: 'var(--accent)' }}><Icon name="audio" size={18} /></span>}
+              {!isAudio(t) && <img src={posterUrl(t.id)} alt="" loading="lazy" />}
+              {!isAudio(t) && !isImage(t) && <span><Icon name="video" size={11} /></span>}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

@@ -13,21 +13,25 @@ import { ChipMenu, Clip, Icon, MediaCard, ModelPicker, RailHandle, Spill, Steppe
 import { LoraChips, useLoraPicks } from '../Loras';
 import Viewer, { animate, recreate, remove } from '../Viewer';
 import { MentionBox } from '../Mention';
+import { MediaPicker, sourceToFile } from '../SourcePick';
 
-/** FLUX.2 dev, Klein and FLUX.3 take up to six reference pictures, your own plus any @cast. */
+/** Qwen-Image 2.1, FLUX.2 dev and FLUX.3 take up to six reference
+ *  pictures, your own plus any @cast; Qwen-Image renders them through
+ *  Qwen-Image-Edit 2509, which holds three. Krea-2, Z-Image and FLUX.2
+ *  Klein are t2i only (their weights render spliced reference latents with
+ *  artifacts or noise). */
 const MAX_REFS = 6;
 
-/** A dropzone that adds reference pictures (click or drag). */
+/** Adds reference pictures: browse the device, pick from the cast, or the library. */
 function RefWell({ onFiles, compact, hint }: { onFiles: (f: File[]) => void; compact?: boolean; hint: string }) {
-  const input = useRef<HTMLInputElement>(null);
-  const zone = useDropZone(onFiles);
   return (
-    <div className={`well ${zone.over ? 'drag' : ''}`} style={compact ? { padding: 10 } : undefined} onClick={() => input.current?.click()} {...zone.props}>
-      <input ref={input} type="file" accept="image/*" multiple hidden
-        onChange={(e) => { if (e.target.files) onFiles(Array.from(e.target.files)); e.target.value = ''; }} />
-      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{compact ? '+ Add reference' : 'Add references'}</div>
-      {!compact && <div style={{ fontSize: 12, marginTop: 2 }}>{hint}</div>}
-    </div>
+    <MediaPicker
+      accept={['image']}
+      title={compact ? '+ Add reference' : 'Add references'}
+      sub={hint}
+      icon="image"
+      onPick={(s) => void sourceToFile(s).then((f) => { if (f) onFiles([f]); else toast('could not load that media', true); })}
+    />
   );
 }
 
@@ -44,9 +48,12 @@ export default function ImagePage() {
   const [busy, setBusy] = useState(false);
   const [loras, setLoras] = useLoraPicks(model.loraFamily);
   const [refs, setRefs] = useState<{ token: string; name: string }[]>([]);
+  const [title, setTitle] = useState('');
   const [viewing, setViewing] = useState<number | null>(null);
   const [railOpen, toggleRail] = useRail();
   const refsOn = !!model.refs;
+  // Qwen-Image renders its references through Qwen-Image-Edit 2509, which holds three.
+  const maxRefs = model.id === 'qwen' ? 3 : MAX_REFS;
 
   // Switching model clears the references (only some models take them).
   useEffect(() => { setRefs([]); }, [model.id]);
@@ -55,7 +62,7 @@ export default function ImagePage() {
     for (const f of files.filter((x) => x.type.startsWith('image/'))) {
       try {
         const token = await uploadFile(f);
-        setRefs((cur) => [...cur, { token, name: f.name }].slice(0, MAX_REFS));
+        setRefs((cur) => [...cur, { token, name: f.name }].slice(0, maxRefs));
       } catch (e) { toast(e instanceof Error ? e.message : 'upload failed', true); }
     }
   }
@@ -81,7 +88,7 @@ export default function ImagePage() {
     try {
       const r = await api.generate({
         kind: 'still', model: model.id, quality, prompt, userPrompt: prompt, width: size.w, height: size.h, count,
-        shotName: prompt.slice(0, 40),
+        shotName: (title.trim() || prompt).slice(0, 60),
         ...(loras.length ? { loras } : {}),
         ...(refsOn && refs.length ? { refImages: refs.map((r) => r.token) } : {}),
       });
@@ -127,12 +134,19 @@ export default function ImagePage() {
                 ))}
               </div>
             )}
-            {refs.length < MAX_REFS && (
+            {refs.length < maxRefs && (
               <RefWell onFiles={addRefs} compact={refs.length > 0}
-                hint={`${model.label} keeps their faces, clothes and objects in a new photograph. Point at them as "the person in image 1".`} />
+                hint={model.id === 'qwen'
+                  ? `Renders through Qwen-Image-Edit 2509: the frame is built around its ${maxRefs} reference pictures.`
+                  : `${model.label} keeps their faces, clothes and objects in a new photograph. Point at them as "the person in image 1".`} />
             )}
           </div>
         )}
+
+        <div className="rail-section">
+          <div className="label">Title</div>
+          <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="Name this image (optional)" />
+        </div>
 
         <div className="rail-section">
           <div className="label">Prompt</div>

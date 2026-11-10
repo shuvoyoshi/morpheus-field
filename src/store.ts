@@ -17,6 +17,8 @@ export interface Live {
   toast: { text: string; err?: boolean } | null;
   /** App ids pinned to the header as quick links, in the order they were added. */
   favorites: string[];
+  /** Show the Cast tab in the media pickers (toggled on the Cast page). */
+  castTab: boolean;
 }
 
 const FAV_KEY = 'morpheus.favorites';
@@ -24,7 +26,12 @@ function loadFavorites(): string[] {
   try { return JSON.parse(localStorage.getItem(FAV_KEY) ?? '[]'); } catch { return []; }
 }
 
-let state: Live = { takes: [], status: null, progress: {}, started: {}, preview: null, toast: null, favorites: loadFavorites() };
+const CAST_TAB_KEY = 'morpheus.castTabInPickers';
+function loadCastTab(): boolean {
+  try { return localStorage.getItem(CAST_TAB_KEY) !== '0'; } catch { return true; }
+}
+
+let state: Live = { takes: [], status: null, progress: {}, started: {}, preview: null, toast: null, favorites: loadFavorites(), castTab: loadCastTab() };
 const listeners = new Set<() => void>();
 function set(patch: Partial<Live>) {
   state = { ...state, ...patch };
@@ -53,6 +60,12 @@ export function toggleFavorite(id: string) {
   const favorites = has ? state.favorites.filter((x) => x !== id) : [...state.favorites, id];
   try { localStorage.setItem(FAV_KEY, JSON.stringify(favorites)); } catch { /* private mode */ }
   set({ favorites });
+}
+
+/** Show/hide the Cast tab in every media picker. Survives reloads via localStorage. */
+export function setCastTabInPickers(on: boolean) {
+  try { localStorage.setItem(CAST_TAB_KEY, on ? '1' : '0'); } catch { /* private mode */ }
+  set({ castTab: on });
 }
 
 export async function refreshTakes() {

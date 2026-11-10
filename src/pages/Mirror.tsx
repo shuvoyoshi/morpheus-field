@@ -15,6 +15,7 @@ import { MIRROR_CONTROLS as CONTROLS, mirrorSize } from '../catalog';
 import { PhoneDrop } from '../Phone';
 import { MentionBox, useMentioned } from '../Mention';
 import { RestyleControls, SwapControls } from './MirrorEdit';
+import { MediaPicker, sourceToFile, type SourceKind } from '../SourcePick';
 
 /**
  * Mirror's modes. Object swap is experimental and hidden: open it with
@@ -254,17 +255,22 @@ export function probeClip(url: string): Promise<{ s: number; w: number; h: numbe
   });
 }
 
+/** Map an `accept` attribute ("image/*,video/*") to the picker's media kinds. */
+function acceptKinds(accept: string): SourceKind[] {
+  const kinds = accept.split(',').map((x) => x.trim().replace(/\/\*$/, ''))
+    .filter((x): x is SourceKind => x === 'image' || x === 'video' || x === 'audio');
+  return kinds.length ? kinds : ['image'];
+}
+
 export function DropWell(p: { accept: string; onFile: (f: File) => void; icon: string; title: string; sub: string; compact?: boolean }) {
-  const input = useRef<HTMLInputElement>(null);
-  const zone = useDropZone((files) => p.onFile(files[0]));
   return (
-    <div className={`well ${zone.over ? 'drag' : ''}`} style={p.compact ? { padding: 10 } : undefined}
-      onClick={() => input.current?.click()} {...zone.props}>
-      <input ref={input} type="file" accept={p.accept} hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onFile(f); }} />
-      {!p.compact && <div className="well-icons"><span><Icon name={p.icon} /></span></div>}
-      <div style={{ fontWeight: 600, color: 'var(--text)' }}>{p.title}</div>
-      {p.sub && <div style={{ fontSize: 12, marginTop: 2 }}>{p.sub}</div>}
-    </div>
+    <MediaPicker
+      accept={acceptKinds(p.accept)}
+      title={p.title}
+      sub={p.sub}
+      icon={p.icon}
+      onPick={(s) => void sourceToFile(s).then((f) => { if (f) p.onFile(f); else toast('could not load that media', true); })}
+    />
   );
 }
 

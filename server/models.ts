@@ -226,7 +226,7 @@ export const BUNDLES: Bundle[] = [
   {
     id: 'klein',
     label: 'FLUX.2 Klein stills',
-    purpose: 'Adds FLUX.2 Klein 9B: a compact, fast FLUX.2 that also takes reference pictures (identity and wardrobe carried over).',
+    purpose: 'Adds FLUX.2 Klein 9B: a compact, fast FLUX.2 for stills. Cast pictures compose through Qwen-Image-Edit; its own weights do not render user reference pictures.',
     license: 'FLUX.2 Klein 9B (Black Forest Labs) with its Qwen3-VL 8B encoder.',
     optional: true,
     files: [
@@ -613,6 +613,8 @@ export function bundlesFor(req: {
   model?: string;
   quality?: string;
   castEngine?: string;
+  /** Reference pictures on a still (qwen rides the Edit 2509 path). */
+  refImages?: string[];
   /** Stage look frame engine ('depth' or 'edit'). */
   engine?: string;
   /** Stage shot: its look frame is given, or one is made first with lookEngine. */
@@ -631,7 +633,10 @@ export function bundlesFor(req: {
   }
   if (req.kind === 'still') {
     const stillBundle: Record<string, string> = { qwen: 'qwen', flux2: 'flux2', qwen21: 'qwen21', krea2: 'krea2', zimage: 'zimage', klein: 'klein', flux3: 'flux3' };
-    return [stillBundle[req.model ?? 'qwen'] ?? 'qwen'];
+    const base = stillBundle[req.model ?? 'qwen'] ?? 'qwen';
+    // Qwen-Image with reference pictures renders through Qwen-Image-Edit 2509.
+    if (req.model === 'qwen' && (req.refImages?.length ?? 0) > 0) return ['qwen', 'edit'];
+    return [base];
   }
   if (req.kind === 'edit') return ['edit'];
   if (req.kind === 'upres') return ['upres'];

@@ -151,9 +151,11 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     { name: 'image qwen21 1:1', model: 'qwen21', prompt: 'a red door', aspect: '1:1', quality: 'quality', res: '1K', count: 1 },
     { name: 'image krea2 draft', model: 'krea2', prompt: 'a neon sign in the rain', aspect: '16:9', quality: 'draft', res: '1K', count: 1 },
     { name: 'image zimage 9:16 2K', model: 'zimage', prompt: 'a lighthouse at dusk', aspect: '9:16', quality: 'quality', res: '2K', count: 2 },
-    { name: 'image klein + one reference', model: 'klein', prompt: 'the dog in image 1 on a beach', aspect: '1:1', quality: 'quality', res: '1K', count: 1, refs: [{ token: 'asset:r1', name: 'r1.png' }] },
+    { name: 'image klein 16:9', model: 'klein', prompt: 'a snow-capped mountain', aspect: '16:9', quality: 'quality', res: '1K', count: 1 },
     { name: 'image flux3 16:9', model: 'flux3', prompt: 'a snow-capped mountain', aspect: '16:9', quality: 'quality', res: '1K', count: 1 },
     { name: 'image flux3 + two references', model: 'flux3', prompt: 'the cat from image 1 and the bird from image 2 in a garden', aspect: '1:1', quality: 'quality', res: '1K', count: 1, refs: [{ token: 'asset:r1', name: 'r1.png' }, { token: 'asset:r2', name: 'r2.png' }] },
+    { name: 'image qwen + two references (Edit 2509 path)', model: 'qwen', prompt: 'a portrait of the person in image 1 wearing a coat', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refs: [{ token: 'asset:r1', name: 'r1.png' }, { token: 'asset:r2', name: 'r2.png' }] },
+    { name: 'image qwen21 + three references', model: 'qwen21', prompt: 'the person in image 1 with the dog in image 2 and the cat in image 3', aspect: '16:9', quality: 'quality', res: '1K', count: 1, refs: [{ token: 'asset:r1', name: 'r1.png' }, { token: 'asset:r2', name: 'r2.png' }, { token: 'asset:r3', name: 'r3.png' }] },
     { name: 'image qwen + your LoRA', model: 'qwen', prompt: 'a red door', aspect: '1:1', quality: 'draft', res: '1K', count: 1, loras: [{ name: 'my-style.safetensors', strength: 0.8 }] },
     { name: 'image flux2 refs + LoRAs', model: 'flux2', prompt: 'the man in image 1 at a bus stop', aspect: '16:9', quality: 'quality', res: '1K', count: 2,
       loras: [{ name: 'a.safetensors', strength: 1 }, { name: 'b.safetensors', strength: -0.4 }], refs: [{ token: 'asset:r1', name: 'r1.png' }, { token: 'asset:r2', name: 'r2.png' }] },
@@ -162,12 +164,14 @@ const { VIDEO_MODELS, IMAGE_MODELS, IMAGE_RES, compilePrompt, presetById, sizeFo
     const size = sizeFor(c.aspect, IMAGE_RES.find((r) => r.id === c.res)!.mp);
     const loras = c.loras ?? [];
     const refs = c.refs ?? [];
-    const oracle = expr(bodySrc, { model, quality: c.quality, prompt: c.prompt, size, count: c.count, loras, refs, refsOn: !!model.refs });
+    const oracle = expr(bodySrc, { model, quality: c.quality, prompt: c.prompt, title: '', size, count: c.count, loras, refs, refsOn: !!model.refs });
     same(c.name, imageBody({ model: c.model, prompt: c.prompt, aspect: c.aspect, quality: c.quality, res: c.res, count: c.count, loras, refImages: refs.map((r) => r.token) }), oracle);
   }
   assert.ok(src.includes('const refsOn = !!model.refs;'), 'Image.tsx: references follow the model');
-  assert.throws(() => imageBody({ model: 'qwen', prompt: 'x', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refImages: ['asset:r'] }), /Reference pictures need a model that takes them/);
+  assert.throws(() => imageBody({ model: 'krea2', prompt: 'x', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refImages: ['asset:r'] }), /Reference pictures need a model that takes them/);
   assert.throws(() => imageBody({ model: 'zimage', prompt: 'x', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refImages: ['asset:r'] }), /Reference pictures need a model that takes them/);
+  assert.throws(() => imageBody({ model: 'klein', prompt: 'x', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refImages: ['asset:r'] }), /Reference pictures need a model that takes them/);
+  assert.throws(() => imageBody({ model: 'qwen', prompt: 'x', aspect: '1:1', quality: 'draft', res: '1K', count: 1, refImages: ['a', 'b', 'c', 'd'] }), /Up to 3/);
 }
 
 // ---------- Director.tsx ----------

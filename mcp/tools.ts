@@ -419,7 +419,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'generate_image', title: 'Generate image',
-    description: 'Image app: stills from any installed image model — Qwen-Image, FLUX.2 dev, Qwen-Image 2.1, Krea-2 Turbo, Z-Image Turbo, FLUX.2 Klein, FLUX.3. Finished stills can feed generate_video / make_loop / direct_shot as take:<id>. A prompt that @mentions cast is composed from their pictures: by Qwen-Image-Edit 2509 on qwen, or as reference latents on flux2 / klein (photographic skin, identity held).',
+    description: 'Image app: stills from any installed image model — Qwen-Image, FLUX.2 dev, Qwen-Image 2.1, Krea-2 Turbo, Z-Image Turbo, FLUX.2 Klein, FLUX.3. Finished stills can feed generate_video / make_loop / direct_shot as take:<id>. A prompt that @mentions cast is composed from their pictures: flux2 reads them as reference latents (photographic skin, identity held), the other models compose them through Qwen-Image-Edit 2509.',
     inputSchema: {
       prompt: z.string().min(1).describe('The image. @Name brings in a cast member (list_cast). With references, point at them as "the person in image 1".'),
       model: imageModel,
@@ -428,7 +428,7 @@ export const TOOLS: ToolDef[] = [
       resolution: z.enum(IMAGE_RES.map((r) => r.id) as ['1K', '2K']).default('1K'),
       count,
       references: z.array(inputRef('Reference picture')).max(6).optional()
-        .describe('flux2 / klein only: up to 6 pictures whose people, clothes and objects carry into a new photograph. Numbered in order, before any @cast pictures.'),
+        .describe('qwen21 / flux2 / flux3: up to 6 pictures whose people, clothes and objects carry into a new photograph. qwen: up to 3 (it renders them through Qwen-Image-Edit 2509). krea2 / zimage / klein refuse them (their reference path renders artifacts or noise). Numbered in order, before any @cast pictures.'),
       loras,
     },
     annotations: GPU,

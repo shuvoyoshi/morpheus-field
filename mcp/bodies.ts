@@ -107,21 +107,27 @@ export interface ImageOpts {
   res: ImageRes;
   count: number;
   loras?: LoraPick[];
-  /** Models whose `refs` flag is set (FLUX.2 dev, Klein, FLUX.3): reference picture tokens (the Refs chip). */
+  /**
+    * Reference picture tokens (the page's References section). Models whose
+    * `refs` flag is set: qwen21 / flux2 / flux3 hold up to 6; qwen up to 3
+    * (it renders them through Qwen-Image-Edit 2509). Krea-2, Z-Image and
+    * FLUX.2 Klein are text-to-image and refuse them.
+    */
   refImages?: string[];
 }
 
-/** Image.tsx go(). */
+/** Image.tsx go(). The page's title field is optional; blank falls back to the prompt. */
 export function imageBody(o: ImageOpts): Body {
   if (!o.prompt.trim()) throw new Error('Image needs a prompt.');
   if (o.refImages?.length && !imageModelById(o.model).refs) throw new Error(`Reference pictures need a model that takes them: ${IMAGE_MODELS.filter((m) => m.refs).map((m) => m.label).join(', ')}.`);
-  if ((o.refImages?.length ?? 0) > 6) throw new Error('Up to 6 reference pictures.');
+  const maxRefs = o.model === 'qwen' ? 3 : 6;
+  if ((o.refImages?.length ?? 0) > maxRefs) throw new Error(`Up to ${maxRefs} reference pictures on ${imageModelById(o.model).label}.`);
   const tier = IMAGE_RES.find((r) => r.id === o.res);
   if (!tier) throw new Error(`Unknown image resolution "${o.res}". Options: ${IMAGE_RES.map((r) => r.id).join(', ')}`);
   const size = sizeFor(o.aspect, tier.mp);
   return {
     kind: 'still', model: o.model, quality: o.quality, prompt: o.prompt, userPrompt: o.prompt, width: size.w, height: size.h, count: o.count,
-    shotName: o.prompt.slice(0, 40),
+    shotName: o.prompt.slice(0, 60),
     ...(o.loras?.length ? { loras: o.loras } : {}),
     ...(o.refImages?.length ? { refImages: o.refImages } : {}),
   };
